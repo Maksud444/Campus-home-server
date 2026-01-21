@@ -1,0 +1,305 @@
+{
+  "info": {
+    "name": "Student Housing API",
+    "description": "Complete API collection for Student Housing Platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Register Student",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ahmed Hassan\",\n  \"email\": \"ahmed@example.com\",\n  \"password\": \"123456\",\n  \"role\": \"student\",\n  \"phone\": \"01712345678\",\n  \"university\": \"Cairo University\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Register Agent",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Real Estate Agent\",\n  \"email\": \"agent@example.com\",\n  \"password\": \"123456\",\n  \"role\": \"agent\",\n  \"phone\": \"01712345679\",\n  \"agentInfo\": {\n    \"company\": \"Prime Properties\",\n    \"license\": \"AG-12345\",\n    \"experience\": 5\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Register Owner",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{baseUrl}}/auth/register",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Property Owner\",\n  \"email\": \"owner@example.com\",\n  \"password\": \"123456\",\n  \"role\": \"owner\",\n  \"phone\": \"01712345680\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Login",
+          "event": [{
+            "listen": "test",
+            "script": {
+              "exec": ["pm.test(\"Save token\", function () {", "    var jsonData = pm.response.json();", "    pm.collectionVariables.set(\"token\", jsonData.token);", "});"]
+            }
+          }],
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Content-Type", "value": "application/json"}],
+            "url": "{{baseUrl}}/auth/login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ahmed@example.com\",\n  \"password\": \"123456\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Get Profile",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": "{{baseUrl}}/auth/profile"
+          }
+        },
+        {
+          "name": "Update Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "url": "{{baseUrl}}/auth/profile",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ahmed Hassan Updated\",\n  \"phone\": \"01712345699\"\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Properties",
+      "item": [
+        {
+          "name": "Get All Properties",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/properties?page=1&limit=12"
+          }
+        },
+        {
+          "name": "Get Property by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/properties/:id"
+          }
+        },
+        {
+          "name": "Create Property (Student)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "url": "{{baseUrl}}/properties",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Cozy Studio near Cairo University\",\n  \"description\": \"Beautiful studio apartment perfect for students\",\n  \"type\": \"studio\",\n  \"price\": 3000,\n  \"location\": {\n    \"address\": \"123 University Street\",\n    \"city\": \"Cairo\",\n    \"area\": \"Giza\"\n  },\n  \"bedrooms\": 1,\n  \"bathrooms\": 1,\n  \"area\": 45,\n  \"amenities\": [\"WiFi\", \"AC\", \"Furnished\"],\n  \"furnished\": true\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Property (Agent)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "url": "{{baseUrl}}/properties",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Luxury 2 Bedroom Apartment\",\n  \"description\": \"Modern apartment in prime location\",\n  \"type\": \"apartment\",\n  \"price\": 8000,\n  \"location\": {\n    \"address\": \"456 Nile Street\",\n    \"city\": \"Cairo\",\n    \"area\": \"Zamalek\"\n  },\n  \"bedrooms\": 2,\n  \"bathrooms\": 2,\n  \"area\": 120,\n  \"amenities\": [\"WiFi\", \"AC\", \"Parking\", \"Gym\"],\n  \"furnished\": true,\n  \"commission\": 10\n}"
+            }
+          }
+        },
+        {
+          "name": "Get My Properties",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": "{{baseUrl}}/properties/my/properties"
+          }
+        },
+        {
+          "name": "Update Property",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "url": "{{baseUrl}}/properties/:id",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"price\": 3500,\n  \"availability\": \"available\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Property",
+          "request": {
+            "method": "DELETE",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": "{{baseUrl}}/properties/:id"
+          }
+        },
+        {
+          "name": "Add Review",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "url": "{{baseUrl}}/properties/:id/reviews",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"rating\": 5,\n  \"comment\": \"Great property!\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Save Property",
+          "request": {
+            "method": "POST",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": "{{baseUrl}}/properties/:id/save"
+          }
+        },
+        {
+          "name": "Get Saved Properties",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": "{{baseUrl}}/properties/saved/list"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Services",
+      "item": [
+        {
+          "name": "Get All Services",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/services?page=1&limit=12"
+          }
+        },
+        {
+          "name": "Get Service by ID",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/services/:id"
+          }
+        },
+        {
+          "name": "Create Service",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "url": "{{baseUrl}}/services",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Professional Plumbing Services\",\n  \"category\": \"plumbing\",\n  \"description\": \"Expert plumbing services for all your needs\",\n  \"priceRange\": {\n    \"min\": 100,\n    \"max\": 300,\n    \"unit\": \"EGP\"\n  },\n  \"location\": {\n    \"city\": \"Cairo\",\n    \"areas\": [\"Nasr City\", \"Maadi\", \"Heliopolis\"]\n  },\n  \"features\": [\"Pipe Repair\", \"Water Heater\", \"Leak Detection\"],\n  \"workingHours\": {\n    \"start\": \"09:00\",\n    \"end\": \"18:00\"\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Bookings",
+      "item": [
+        {
+          "name": "Create Property Booking",
+          "request": {
+            "method": "POST",
+            "header": [
+              {"key": "Content-Type", "value": "application/json"},
+              {"key": "Authorization", "value": "Bearer {{token}}"}
+            ],
+            "url": "{{baseUrl}}/bookings",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"property\",\n  \"property\": \"PROPERTY_ID_HERE\",\n  \"startDate\": \"2024-02-01\",\n  \"endDate\": \"2024-08-01\",\n  \"price\": 3000,\n  \"notes\": \"Looking forward to moving in\",\n  \"contactInfo\": {\n    \"name\": \"Ahmed Hassan\",\n    \"phone\": \"01712345678\",\n    \"email\": \"ahmed@example.com\"\n  }\n}"
+            }
+          }
+        },
+        {
+          "name": "Get My Bookings",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": "{{baseUrl}}/bookings/my-bookings"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Student Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": "{{baseUrl}}/dashboard/student"
+          }
+        },
+        {
+          "name": "Agent Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": "{{baseUrl}}/dashboard/agent"
+          }
+        },
+        {
+          "name": "Owner Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [{"key": "Authorization", "value": "Bearer {{token}}"}],
+            "url": "{{baseUrl}}/dashboard/owner"
+          }
+        }
+      ]
+    }
+  ]
+}
