@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-const propertySchema = new mongoose.Schema({
+const postSchema = new mongoose.Schema({
   userId: {
     type: String,
     required: true
@@ -75,4 +75,4 @@ const propertySchema = new mongoose.Schema({
   timestamps: true
 });
 
-export default mongoose.models.Property || mongoose.model('Property', propertySchema);
+export default mongoose.models.Post || mongoose.model('Post', postSchema);

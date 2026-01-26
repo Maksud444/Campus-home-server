@@ -18,7 +18,10 @@ const userSchema = new mongoose.Schema({
   password: {
     type: String,
     minlength: [6, 'Password must be at least 6 characters'],
-    select: false
+    select: false,
+    required: function() {
+      return this.authProvider === 'local';
+    }
   },
   phone: {
     type: String,
@@ -27,7 +30,8 @@ const userSchema = new mongoose.Schema({
   role: {
     type: String,
     enum: ['student', 'agent', 'owner', 'service-provider', 'admin'],
-    default: 'student'
+    default: 'student',
+    required: true  // ← CRITICAL: Make role required
   },
   university: {
     type: String,
@@ -75,30 +79,29 @@ const userSchema = new mongoose.Schema({
     category: String,
     servicesOffered: [String],
     rating: Number
-  },
-  createdAt: {
-    type: Date,
-    default: Date.now
   }
 }, {
   timestamps: true
 });
 
-// Hash password before saving (only for local auth)
+// Hash password before saving
 userSchema.pre('save', async function(next) {
-  // Only hash if password is modified and auth provider is local
-  if (!this.isModified('password') || this.authProvider !== 'local') {
+  if (!this.isModified('password')) {
     return next();
   }
   
-  const salt = await bcrypt.genSalt(10);
-  this.password = await bcrypt.hash(this.password, salt);
+  // Only hash password for local auth
+  if (this.authProvider === 'local' && this.password) {
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+  }
+  
   next();
 });
 
 // Compare password method
 userSchema.methods.comparePassword = async function(candidatePassword) {
-  if (this.authProvider !== 'local') {
+  if (this.authProvider !== 'local' || !this.password) {
     throw new Error('Social login users do not have passwords');
   }
   return await bcrypt.compare(candidatePassword, this.password);
@@ -111,8 +114,6 @@ userSchema.methods.toJSON = function() {
   delete user.verificationToken;
   delete user.resetPasswordToken;
   delete user.resetPasswordExpire;
-  delete user.googleId;
-  delete user.facebookId;
   return user;
 };
 

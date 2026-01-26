@@ -4,7 +4,7 @@ import User from '../models/User.model.js';
 
 // Generate JWT token
 const generateToken = (id) => {
-  return jwt.sign({ id }, process.env.JWT_SECRET, {
+  return jwt.sign({ id }, process.env.JWT_SECRET || 'default-secret-key', {
     expiresIn: process.env.JWT_EXPIRE || '30d'
   });
 };
@@ -14,15 +14,37 @@ const generateToken = (id) => {
 // @access  Public
 export const register = async (req, res) => {
   try {
+    console.log('📝 Registration Request:', req.body);
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+      console.log('❌ Validation Errors:', errors.array());
+      return res.status(400).json({ 
+        success: false, 
+        errors: errors.array() 
+      });
     }
 
     const { name, email, password, role, phone, university, agentInfo, ownerInfo } = req.body;
 
+    // CRITICAL: Validate role is provided and valid
+    if (!role) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Please select a role (student, agent, owner, or service-provider)' 
+      });
+    }
+
+    const validRoles = ['student', 'agent', 'owner', 'service-provider'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `Invalid role. Must be one of: ${validRoles.join(', ')}` 
+      });
+    }
+
     // Check if user exists
-    const userExists = await User.findOne({ email });
+    const userExists = await User.findOne({ email: email.toLowerCase() });
     if (userExists) {
       return res.status(400).json({ 
         success: false, 
@@ -30,15 +52,16 @@ export const register = async (req, res) => {
       });
     }
 
-    // Create user data
+    // Create user data object
     const userData = {
-      name,
-      email,
+      name: name.trim(),
+      email: email.toLowerCase().trim(),
       password,
-      role: role || 'student',
-      phone,
-      university,
-      authProvider: 'local'
+      role: role,  // ← CRITICAL: Explicitly set role
+      phone: phone || '',
+      university: university || '',
+      authProvider: 'local',
+      verified: false
     };
 
     // Add role-specific info
@@ -49,25 +72,41 @@ export const register = async (req, res) => {
       userData.ownerInfo = ownerInfo;
     }
 
+    console.log('👤 Creating user with data:', {
+      email: userData.email,
+      role: userData.role,
+      name: userData.name
+    });
+
     // Create user
     const user = await User.create(userData);
+
+    console.log('✅ User Created Successfully:', {
+      id: user._id,
+      email: user.email,
+      role: user.role,
+      name: user.name
+    });
 
     // Generate token
     const token = generateToken(user._id);
 
     res.status(201).json({
       success: true,
+      message: 'User registered successfully',
       token,
       user: {
         id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
-        avatar: user.avatar
+        avatar: user.avatar,
+        phone: user.phone,
+        university: user.university
       }
     });
   } catch (error) {
-    console.error('Register error:', error);
+    console.error('❌ Register error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error during registration',
@@ -81,15 +120,20 @@ export const register = async (req, res) => {
 // @access  Public
 export const login = async (req, res) => {
   try {
+    console.log('🔐 Login Request:', req.body.email);
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+      return res.status(400).json({ 
+        success: false, 
+        errors: errors.array() 
+      });
     }
 
     const { email, password } = req.body;
 
     // Check user exists and select password
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+password');
     if (!user) {
       return res.status(401).json({ 
         success: false, 
@@ -114,6 +158,12 @@ export const login = async (req, res) => {
       });
     }
 
+    console.log('✅ Login Successful:', {
+      email: user.email,
+      role: user.role,
+      id: user._id
+    });
+
     // Generate token
     const token = generateToken(user._id);
 
@@ -122,6 +172,7 @@ export const login = async (req, res) => {
 
     res.json({
       success: true,
+      message: 'Login successful',
       token,
       user: {
         id: user._id,
@@ -134,7 +185,7 @@ export const login = async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Login error:', error);
+    console.error('❌ Login error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error during login',
@@ -152,10 +203,10 @@ export const googleAuthCallback = async (req, res) => {
     const token = generateToken(user._id);
 
     // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/success?token=${token}`);
   } catch (error) {
     console.error('Google auth callback error:', error);
-    res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=auth_failed`);
   }
 };
 
@@ -168,10 +219,10 @@ export const facebookAuthCallback = async (req, res) => {
     const token = generateToken(user._id);
 
     // Redirect to frontend with token
-    res.redirect(`${process.env.FRONTEND_URL}/auth/success?token=${token}`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/auth/success?token=${token}`);
   } catch (error) {
     console.error('Facebook auth callback error:', error);
-    res.redirect(`${process.env.FRONTEND_URL}/login?error=auth_failed`);
+    res.redirect(`${process.env.FRONTEND_URL || 'http://localhost:3000'}/login?error=auth_failed`);
   }
 };
 
@@ -182,6 +233,13 @@ export const getProfile = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).populate('savedProperties');
     
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
     res.json({
       success: true,
       user
@@ -201,9 +259,19 @@ export const getProfile = async (req, res) => {
 // @access  Private
 export const updateProfile = async (req, res) => {
   try {
-    const { name, phone, university, avatar, agentInfo, ownerInfo, serviceProviderInfo } = req.body;
+    const { name, phone, university, avatar, bio, location, agentInfo, ownerInfo, serviceProviderInfo } = req.body;
 
-    const updateData = { name, phone, university, avatar };
+    console.log('💾 Updating profile for user:', req.user.id);
+    console.log('📥 Update data:', { name, phone, university, avatar });
+
+    const updateData = { 
+      name, 
+      phone, 
+      university, 
+      avatar,
+      bio,
+      location
+    };
 
     // Update role-specific info
     if (req.user.role === 'agent' && agentInfo) {
@@ -220,14 +288,17 @@ export const updateProfile = async (req, res) => {
       req.user.id,
       updateData,
       { new: true, runValidators: true }
-    );
+    ).select('-password');
+
+    console.log('✅ Profile updated successfully');
 
     res.json({
       success: true,
+      message: 'Profile updated successfully',
       user
     });
   } catch (error) {
-    console.error('Update profile error:', error);
+    console.error('❌ Update profile error:', error);
     res.status(500).json({ 
       success: false, 
       message: 'Server error',
