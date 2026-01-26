@@ -8,7 +8,8 @@
     "dev": "nodemon src/server.js",
     "start": "node src/server.js",
     "seed": "node src/scripts/seedProperties.js",
-    "view-db": "node src/scripts/viewData.js"
+    "view-db": "node src/scripts/viewData.js",
+    "vercel-build": "echo 'Building for Vercel'"
   },
   "dependencies": {
     "express": "^4.18.2",
@@ -23,5 +24,8 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
+  },
+   "engines": {
+    "node": ">=18.0.0"
   }
 }

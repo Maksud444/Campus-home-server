@@ -39,3 +39,4 @@ public/uploads/
 
 # Misc
 .cache
+.vercel
