@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "description": "Student Housing Platform Backend",
-  "main": "api/index.js",
+  "main": "src/server.js",
   "scripts": {
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
