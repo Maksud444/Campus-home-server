@@ -4,13 +4,13 @@
   "type": "module",
   "description": "Student Housing Platform Backend",
   "main": "src/server.js",
-  "scripts": {
-    "dev": "nodemon src/server.js",
-    "start": "node src/server.js",
-    "seed": "node src/scripts/seedProperties.js",
-    "view-db": "node src/scripts/viewData.js",
-    "vercel-build": "echo 'Building for Vercel'"
-  },
+"scripts": {
+  "dev": "nodemon src/index.js",
+  "start": "node src/index.js",
+  "seed": "node src/scripts/seedProperties.js",
+  "view-db": "node src/scripts/viewData.js",
+  "vercel-build": "echo 'Building for Vercel'"
+},
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cloudinary": "^1.41.0",

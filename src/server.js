@@ -1,14 +1,12 @@
-// server.js
 import express from 'express'
 import mongoose from 'mongoose'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import cookieParser from 'cookie-parser'
+import passport from 'passport'
 
 dotenv.config()
 
-// Optional: Passport (keep initialize only, no session for Vercel)
-import passport from 'passport'
 import './config/passport.js'
 
 // Routes
@@ -36,7 +34,7 @@ app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use(cookieParser())
 
-// Passport initialize only (no session)
+// Passport initialize only (no session for Vercel)
 app.use(passport.initialize())
 
 // Logger
@@ -59,13 +57,17 @@ app.use('/api/upload', uploadRoutes)
 app.get('/api/health', async (req, res) => {
   try {
     await connectToDatabase()
-    res.json({ status: 'OK', mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected', time: new Date().toISOString() })
+    res.json({
+      status: 'OK',
+      mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+      time: new Date().toISOString()
+    })
   } catch (err) {
     res.status(500).json({ status: 'Error', error: err.message })
   }
 })
 
-// Root
+// Root route
 app.get('/', (req, res) => {
   res.json({ message: 'Student Housing API running 🚀' })
 })
@@ -76,25 +78,26 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal Server Error' })
 })
 
-// ------------------------
-// MongoDB Serverless Compatible Connection
-// ------------------------
+// MongoDB serverless compatible connection
 const MONGODB_URI = process.env.MONGODB_URI
 
-if (!global.mongoose) {
-  global.mongoose = { conn: null, promise: null }
-}
+if (!MONGODB_URI) throw new Error('❌ MONGODB_URI is missing!')
+
+let cached = global.mongoose
+if (!cached) cached = global.mongoose = { conn: null, promise: null }
 
 export async function connectToDatabase() {
-  if (global.mongoose.conn) return global.mongoose.conn
-  if (!global.mongoose.promise) {
-    global.mongoose.promise = mongoose.connect(MONGODB_URI).then(m => m.connection)
+  if (cached.conn) return cached.conn
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(MONGODB_URI).then(m => m.connection)
   }
-  global.mongoose.conn = await global.mongoose.promise
-  return global.mongoose.conn
+  cached.conn = await cached.promise
+  return cached.conn
 }
 
-// Connect immediately (optional)
-connectToDatabase().then(() => console.log('✅ MongoDB connected')).catch(err => console.error('❌ MongoDB error', err))
+// Optional: connect immediately
+connectToDatabase()
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.error('❌ MongoDB error', err))
 
 export default app
