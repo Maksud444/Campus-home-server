@@ -1,13 +1,14 @@
+// server.js
 import express from 'express'
 import mongoose from 'mongoose'
 import cors from 'cors'
 import dotenv from 'dotenv'
-import session from 'express-session'
-import passport from 'passport'
 import cookieParser from 'cookie-parser'
 
 dotenv.config()
 
+// Optional: Passport (keep initialize only, no session for Vercel)
+import passport from 'passport'
 import './config/passport.js'
 
 // Routes
@@ -35,19 +36,8 @@ app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use(cookieParser())
 
-// ⚠️ Session (works locally, may fail serverless)
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'session-secret',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 24 * 60 * 60 * 1000
-  }
-}))
-
+// Passport initialize only (no session)
 app.use(passport.initialize())
-app.use(passport.session())
 
 // Logger
 app.use((req, res, next) => {
@@ -66,19 +56,18 @@ app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/upload', uploadRoutes)
 
 // Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'OK',
-    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-    time: new Date().toISOString()
-  })
+app.get('/api/health', async (req, res) => {
+  try {
+    await connectToDatabase()
+    res.json({ status: 'OK', mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected', time: new Date().toISOString() })
+  } catch (err) {
+    res.status(500).json({ status: 'Error', error: err.message })
+  }
 })
 
 // Root
 app.get('/', (req, res) => {
-  res.json({
-    message: 'Student Housing API running 🚀'
-  })
+  res.json({ message: 'Student Housing API running 🚀' })
 })
 
 // Error handler
@@ -87,13 +76,25 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal Server Error' })
 })
 
-// MongoDB connect
+// ------------------------
+// MongoDB Serverless Compatible Connection
+// ------------------------
 const MONGODB_URI = process.env.MONGODB_URI
-if (!mongoose.connection.readyState) {
-  mongoose.connect(MONGODB_URI)
-    .then(() => console.log('✅ MongoDB connected'))
-    .catch(err => console.error('❌ MongoDB error', err))
+
+if (!global.mongoose) {
+  global.mongoose = { conn: null, promise: null }
 }
 
-// ❌ DO NOT use app.listen() here for serverless
+export async function connectToDatabase() {
+  if (global.mongoose.conn) return global.mongoose.conn
+  if (!global.mongoose.promise) {
+    global.mongoose.promise = mongoose.connect(MONGODB_URI).then(m => m.connection)
+  }
+  global.mongoose.conn = await global.mongoose.promise
+  return global.mongoose.conn
+}
+
+// Connect immediately (optional)
+connectToDatabase().then(() => console.log('✅ MongoDB connected')).catch(err => console.error('❌ MongoDB error', err))
+
 export default app
