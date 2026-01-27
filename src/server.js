@@ -1,3 +1,4 @@
+// src/server.js
 import express from 'express'
 import mongoose from 'mongoose'
 import cors from 'cors'
@@ -29,12 +30,11 @@ app.use(cors({
   ],
   credentials: true
 }))
-
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use(cookieParser())
 
-// Passport initialize only (no session for Vercel)
+// Passport initialize only (no session)
 app.use(passport.initialize())
 
 // Logger
@@ -78,9 +78,10 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal Server Error' })
 })
 
-// MongoDB serverless compatible connection
+// --------------------
+// MongoDB Serverless Compatible Connection
+// --------------------
 const MONGODB_URI = process.env.MONGODB_URI
-
 if (!MONGODB_URI) throw new Error('❌ MONGODB_URI is missing!')
 
 let cached = global.mongoose
@@ -95,7 +96,7 @@ export async function connectToDatabase() {
   return cached.conn
 }
 
-// Optional: connect immediately
+// Optional immediate connect
 connectToDatabase()
   .then(() => console.log('✅ MongoDB connected'))
   .catch(err => console.error('❌ MongoDB error', err))
