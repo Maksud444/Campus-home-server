@@ -72,33 +72,73 @@ app.get('/', (req, res) => {
   res.json({ message: 'Student Housing API running 🚀' })
 })
 
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ message: 'Route not found' })
+})
+
 // Error handler
 app.use((err, req, res, next) => {
-  console.error(err)
-  res.status(500).json({ message: 'Internal Server Error' })
+  console.error('Error:', err.message)
+  console.error('Stack:', err.stack)
+  res.status(500).json({ 
+    message: 'Internal Server Error',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined
+  })
 })
 
 // --------------------
 // MongoDB Serverless Compatible Connection
 // --------------------
 const MONGODB_URI = process.env.MONGODB_URI
-if (!MONGODB_URI) throw new Error('❌ MONGODB_URI is missing!')
+if (!MONGODB_URI) {
+  console.error('❌ MONGODB_URI is missing!')
+  throw new Error('MONGODB_URI is required')
+}
 
 let cached = global.mongoose
-if (!cached) cached = global.mongoose = { conn: null, promise: null }
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null }
+}
 
 export async function connectToDatabase() {
-  if (cached.conn) return cached.conn
-  if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI).then(m => m.connection)
+  if (cached.conn) {
+    return cached.conn
   }
-  cached.conn = await cached.promise
+  
+  if (!cached.promise) {
+    const opts = {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 5000,
+    }
+    
+    cached.promise = mongoose.connect(MONGODB_URI, opts)
+      .then(m => {
+        console.log('✅ MongoDB connected')
+        return m.connection
+      })
+      .catch(err => {
+        console.error('❌ MongoDB connection error:', err.message)
+        cached.promise = null
+        throw err
+      })
+  }
+  
+  try {
+    cached.conn = await cached.promise
+  } catch (err) {
+    cached.promise = null
+    throw err
+  }
+  
   return cached.conn
 }
 
-// Optional immediate connect
-connectToDatabase()
-  .then(() => console.log('✅ MongoDB connected'))
-  .catch(err => console.error('❌ MongoDB error', err))
+// Only connect in development or on first request
+if (process.env.NODE_ENV !== 'production') {
+  connectToDatabase()
+    .then(() => console.log('✅ Development MongoDB connected'))
+    .catch(err => console.error('❌ Development MongoDB error:', err.message))
+}
 
 export default app
