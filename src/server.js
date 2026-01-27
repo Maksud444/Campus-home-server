@@ -35,7 +35,7 @@ app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use(cookieParser())
 
-// ⚠️ Session (will work locally, limited on Vercel)
+// ⚠️ Session (works locally, may fail serverless)
 app.use(session({
   secret: process.env.SESSION_SECRET || 'session-secret',
   resave: false,
@@ -45,13 +45,6 @@ app.use(session({
     maxAge: 24 * 60 * 60 * 1000
   }
 }))
-
-
-const PORT = process.env.PORT || 5000
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`)
-})
 
 app.use(passport.initialize())
 app.use(passport.session())
@@ -72,7 +65,7 @@ app.use('/api/bookings', bookingRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/upload', uploadRoutes)
 
-// Health
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
@@ -94,13 +87,13 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal Server Error' })
 })
 
-// ❗ MongoDB connect (NO listen)
+// MongoDB connect
 const MONGODB_URI = process.env.MONGODB_URI
-
 if (!mongoose.connection.readyState) {
   mongoose.connect(MONGODB_URI)
     .then(() => console.log('✅ MongoDB connected'))
     .catch(err => console.error('❌ MongoDB error', err))
 }
 
+// ❌ DO NOT use app.listen() here for serverless
 export default app
