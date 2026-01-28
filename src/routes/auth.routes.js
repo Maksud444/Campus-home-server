@@ -4,13 +4,13 @@ import { body, validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.model.js';
 import { protect } from '../middleware/auth.middleware.js';
+import passport from 'passport';
 
 const router = express.Router();
 
-// CRITICAL: Use environment variable or fallback
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
+const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
-// Log JWT_SECRET on startup (first 10 chars only for security)
 console.log('🔑 JWT_SECRET loaded:', JWT_SECRET ? JWT_SECRET.substring(0, 10) + '...' : 'NOT SET');
 
 // Generate JWT token
@@ -337,5 +337,51 @@ router.put('/profile', protect, async (req, res) => {
     res.status(500).json({ success: false, message: 'Update failed' });
   }
 });
+
+// ============================================
+// GOOGLE OAUTH ROUTES
+// ============================================
+router.get('/google', passport.authenticate('google', { 
+  scope: ['profile', 'email'],
+  session: false 
+}))
+
+router.get('/callback/google', 
+  passport.authenticate('google', { 
+    session: false,
+    failureRedirect: `${FRONTEND_URL}/login?error=auth_failed` 
+  }),
+  (req, res) => {
+    try {
+      const token = generateToken(req.user._id)
+      res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`)
+    } catch (error) {
+      res.redirect(`${FRONTEND_URL}/login?error=token_generation_failed`)
+    }
+  }
+)
+
+// ============================================
+// FACEBOOK OAUTH ROUTES
+// ============================================
+router.get('/facebook', passport.authenticate('facebook', { 
+  scope: ['email'],
+  session: false 
+}))
+
+router.get('/callback/facebook',
+  passport.authenticate('facebook', { 
+    session: false,
+    failureRedirect: `${FRONTEND_URL}/login?error=auth_failed` 
+  }),
+  (req, res) => {
+    try {
+      const token = generateToken(req.user._id)
+      res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`)
+    } catch (error) {
+      res.redirect(`${FRONTEND_URL}/login?error=token_generation_failed`)
+    }
+  }
+)
 
 export default router;
