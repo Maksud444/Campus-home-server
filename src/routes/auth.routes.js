@@ -77,9 +77,6 @@ router.post('/debug-token', (req, res) => {
   }
 });
 
-// ============================================
-// REGISTER
-// ============================================
 router.post('/register', [
   body('name').trim().notEmpty(),
   body('email').isEmail(),
@@ -88,7 +85,11 @@ router.post('/register', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Validation failed',
+        errors: errors.array() 
+      });
     }
 
     const { name, email, password, role, phone, university } = req.body;
@@ -132,7 +133,10 @@ router.post('/register', [
     });
   } catch (error) {
     console.error('❌ Register error:', error);
-    res.status(500).json({ success: false, message: 'Registration failed' });
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Registration failed' 
+    });
   }
 });
 
@@ -146,7 +150,11 @@ router.post('/login', [
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({ success: false, errors: errors.array() });
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Validation failed',
+        errors: errors.array() 
+      });
     }
 
     const { email, password } = req.body;
@@ -158,7 +166,7 @@ router.post('/login', [
       console.log('❌ User not found');
       return res.status(401).json({ 
         success: false, 
-        message: 'Invalid credentials' 
+        message: 'Invalid email or password' 
       });
     }
 
@@ -167,7 +175,7 @@ router.post('/login', [
       console.log('❌ Password mismatch');
       return res.status(401).json({ 
         success: false, 
-        message: 'Invalid credentials' 
+        message: 'Invalid email or password' 
       });
     }
 
@@ -192,7 +200,10 @@ router.post('/login', [
     });
   } catch (error) {
     console.error('❌ Login error:', error);
-    res.status(500).json({ success: false, message: 'Login failed' });
+    res.status(500).json({ 
+      success: false, 
+      message: error.message || 'Login failed' 
+    });
   }
 });
 
