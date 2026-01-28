@@ -37,23 +37,20 @@ app.use(cookieParser())
 // Passport initialize only (no session)
 app.use(passport.initialize())
 
-// Logger
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`)
-  next()
+// Logger - শুধু development এ
+if (process.env.NODE_ENV !== 'production') {
+  app.use((req, res, next) => {
+    console.log(`${req.method} ${req.path}`)
+    next()
+  })
+}
+
+// Root route - NO AUTH
+app.get('/', (req, res) => {
+  res.json({ message: 'Student Housing API running 🚀' })
 })
 
-// Routes
-app.use('/api/auth', authRoutes)
-app.use('/api/properties', propertyRoutes)
-app.use('/api/posts', postRoutes)
-app.use('/api/users', userRoutes)
-app.use('/api/services', serviceRoutes)
-app.use('/api/bookings', bookingRoutes)
-app.use('/api/dashboard', dashboardRoutes)
-app.use('/api/upload', uploadRoutes)
-
-// Health check
+// Health check - NO AUTH
 app.get('/api/health', async (req, res) => {
   try {
     await connectToDatabase()
@@ -67,10 +64,15 @@ app.get('/api/health', async (req, res) => {
   }
 })
 
-// Root route
-app.get('/', (req, res) => {
-  res.json({ message: 'Student Housing API running 🚀' })
-})
+// Routes - Auth middleware শুধু individual routes এ apply করবেন
+app.use('/api/auth', authRoutes)
+app.use('/api/properties', propertyRoutes)
+app.use('/api/posts', postRoutes)
+app.use('/api/users', userRoutes)
+app.use('/api/services', serviceRoutes)
+app.use('/api/bookings', bookingRoutes)
+app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/upload', uploadRoutes)
 
 // 404 handler
 app.use((req, res) => {
@@ -80,65 +82,30 @@ app.use((req, res) => {
 // Error handler
 app.use((err, req, res, next) => {
   console.error('Error:', err.message)
-  console.error('Stack:', err.stack)
   res.status(500).json({ 
     message: 'Internal Server Error',
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   })
 })
 
-// --------------------
-// MongoDB Serverless Compatible Connection
-// --------------------
+// MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI
-if (!MONGODB_URI) {
-  console.error('❌ MONGODB_URI is missing!')
-  throw new Error('MONGODB_URI is required')
-}
+if (!MONGODB_URI) throw new Error('❌ MONGODB_URI is missing!')
 
 let cached = global.mongoose
-if (!cached) {
-  cached = global.mongoose = { conn: null, promise: null }
-}
+if (!cached) cached = global.mongoose = { conn: null, promise: null }
 
 export async function connectToDatabase() {
-  if (cached.conn) {
-    return cached.conn
-  }
-  
+  if (cached.conn) return cached.conn
   if (!cached.promise) {
-    const opts = {
-      bufferCommands: false,
-      serverSelectionTimeoutMS: 5000,
-    }
-    
-    cached.promise = mongoose.connect(MONGODB_URI, opts)
-      .then(m => {
-        console.log('✅ MongoDB connected')
-        return m.connection
-      })
-      .catch(err => {
-        console.error('❌ MongoDB connection error:', err.message)
-        cached.promise = null
-        throw err
-      })
+    cached.promise = mongoose.connect(MONGODB_URI).then(m => m.connection)
   }
-  
-  try {
-    cached.conn = await cached.promise
-  } catch (err) {
-    cached.promise = null
-    throw err
-  }
-  
+  cached.conn = await cached.promise
   return cached.conn
 }
 
-// Only connect in development or on first request
-if (process.env.NODE_ENV !== 'production') {
-  connectToDatabase()
-    .then(() => console.log('✅ Development MongoDB connected'))
-    .catch(err => console.error('❌ Development MongoDB error:', err.message))
-}
+connectToDatabase()
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.error('❌ MongoDB error', err))
 
 export default app
