@@ -18,7 +18,7 @@ import userRoutes from './routes/user.routes.js'
 import serviceRoutes from './routes/service.routes.js'
 import bookingRoutes from './routes/booking.routes.js'
 import dashboardRoutes from './routes/dashboard.routes.js'
-import uploadRoutes from './routes/upload.routes.js'
+// import uploadRoutes from './routes/upload.routes.js' // TEMPORARILY DISABLED
 
 const app = express()
 
@@ -37,20 +37,12 @@ app.use(cookieParser())
 // Passport initialize only (no session)
 app.use(passport.initialize())
 
-// Logger - শুধু development এ
-if (process.env.NODE_ENV !== 'production') {
-  app.use((req, res, next) => {
-    console.log(`${req.method} ${req.path}`)
-    next()
-  })
-}
-
-// Root route - NO AUTH
+// Root route
 app.get('/', (req, res) => {
   res.json({ message: 'Student Housing API running 🚀' })
 })
 
-// Health check - NO AUTH
+// Health check
 app.get('/api/health', async (req, res) => {
   try {
     await connectToDatabase()
@@ -64,7 +56,7 @@ app.get('/api/health', async (req, res) => {
   }
 })
 
-// Routes - Auth middleware শুধু individual routes এ apply করবেন
+// Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/properties', propertyRoutes)
 app.use('/api/posts', postRoutes)
@@ -72,7 +64,14 @@ app.use('/api/users', userRoutes)
 app.use('/api/services', serviceRoutes)
 app.use('/api/bookings', bookingRoutes)
 app.use('/api/dashboard', dashboardRoutes)
-app.use('/api/upload', uploadRoutes)
+
+// Temporary upload endpoint - disabled
+app.use('/api/upload', (req, res) => {
+  res.json({ 
+    message: 'Upload endpoint temporarily disabled for debugging',
+    note: 'Use Cloudinary direct upload from frontend'
+  })
+})
 
 // 404 handler
 app.use((req, res) => {
