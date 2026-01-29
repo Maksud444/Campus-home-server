@@ -22,16 +22,15 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use(cookieParser())
 app.use(passport.initialize())
 
-// MongoDB Connection
+// MongoDB - bufferCommands TRUE করুন
 const MONGODB_URI = process.env.MONGODB_URI
 if (!MONGODB_URI) throw new Error('MONGODB_URI missing')
 
-mongoose.connect(MONGODB_URI, {
-  bufferCommands: false,
-  serverSelectionTimeoutMS: 30000,
-})
-.then(() => console.log('✅ MongoDB connected'))
-.catch(err => console.error('❌ MongoDB error:', err))
+mongoose.set('bufferCommands', true)  // ← THIS IS CRITICAL
+
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('✅ MongoDB connected'))
+  .catch(err => console.error('❌ MongoDB error:', err))
 
 // Import config
 import './config/passport.js'
@@ -46,17 +45,18 @@ import bookingRoutes from './routes/booking.routes.js'
 import dashboardRoutes from './routes/dashboard.routes.js'
 import uploadRoutes from './routes/upload.routes.js'
 
-// Root
+// Routes
 app.get('/', (req, res) => {
   res.json({ message: 'API running' })
 })
 
-// Health
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'OK', mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected' })
+  res.json({ 
+    status: 'OK', 
+    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected' 
+  })
 })
 
-// Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/properties', propertyRoutes)
 app.use('/api/posts', postRoutes)
@@ -66,12 +66,10 @@ app.use('/api/bookings', bookingRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/upload', uploadRoutes)
 
-// 404
 app.use((req, res) => {
   res.status(404).json({ message: 'Not found' })
 })
 
-// Error
 app.use((err, req, res, next) => {
   console.error(err)
   res.status(500).json({ message: 'Server error' })
