@@ -1,4 +1,3 @@
-// src/server.js
 import express from 'express'
 import mongoose from 'mongoose'
 import cors from 'cors'
@@ -7,18 +6,6 @@ import cookieParser from 'cookie-parser'
 import passport from 'passport'
 
 dotenv.config()
-
-import './config/passport.js'
-
-// Routes
-import authRoutes from './routes/auth.routes.js'
-import propertyRoutes from './routes/property.routes.js'
-import postRoutes from './routes/post.routes.js'
-import userRoutes from './routes/user.routes.js'
-import serviceRoutes from './routes/service.routes.js'
-import bookingRoutes from './routes/booking.routes.js'
-import dashboardRoutes from './routes/dashboard.routes.js'
-import uploadRoutes from './routes/upload.routes.js'
 
 const app = express()
 
@@ -33,9 +20,66 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }))
 app.use(express.urlencoded({ extended: true, limit: '50mb' }))
 app.use(cookieParser())
-
-// Passport initialize only (no session)
 app.use(passport.initialize())
+
+// MongoDB Connection - IMMEDIATELY
+const MONGODB_URI = process.env.MONGODB_URI
+if (!MONGODB_URI) throw new Error('❌ MONGODB_URI is missing!')
+
+mongoose.set('strictQuery', false)
+mongoose.set('bufferCommands', true) // ← CRITICAL CHANGE
+
+const connectDB = async () => {
+  try {
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
+    })
+    console.log('✅ MongoDB connected')
+  } catch (err) {
+    console.error('❌ MongoDB error:', err.message)
+    setTimeout(connectDB, 5000) // Retry after 5 seconds
+  }
+}
+
+// Connect immediately
+connectDB()
+
+// Import passport config AFTER mongoose setup
+import('./config/passport.js').catch(err => console.error('Passport config error:', err))
+
+// Import routes AFTER connection
+let authRoutes, propertyRoutes, postRoutes, userRoutes, 
+    serviceRoutes, bookingRoutes, dashboardRoutes, uploadRoutes
+
+const loadRoutes = async () => {
+  try {
+    authRoutes = (await import('./routes/auth.routes.js')).default
+    propertyRoutes = (await import('./routes/property.routes.js')).default
+    postRoutes = (await import('./routes/post.routes.js')).default
+    userRoutes = (await import('./routes/user.routes.js')).default
+    serviceRoutes = (await import('./routes/service.routes.js')).default
+    bookingRoutes = (await import('./routes/booking.routes.js')).default
+    dashboardRoutes = (await import('./routes/dashboard.routes.js')).default
+    uploadRoutes = (await import('./routes/upload.routes.js')).default
+
+    // Register routes
+    app.use('/api/auth', authRoutes)
+    app.use('/api/properties', propertyRoutes)
+    app.use('/api/posts', postRoutes)
+    app.use('/api/users', userRoutes)
+    app.use('/api/services', serviceRoutes)
+    app.use('/api/bookings', bookingRoutes)
+    app.use('/api/dashboard', dashboardRoutes)
+    app.use('/api/upload', uploadRoutes)
+
+    console.log('✅ Routes loaded')
+  } catch (err) {
+    console.error('❌ Route loading error:', err)
+  }
+}
+
+loadRoutes()
 
 // Root route
 app.get('/', (req, res) => {
@@ -43,28 +87,13 @@ app.get('/', (req, res) => {
 })
 
 // Health check
-app.get('/api/health', async (req, res) => {
-  try {
-    await connectToDatabase()
-    res.json({
-      status: 'OK',
-      mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-      time: new Date().toISOString()
-    })
-  } catch (err) {
-    res.status(500).json({ status: 'Error', error: err.message })
-  }
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'OK',
+    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    time: new Date().toISOString()
+  })
 })
-
-// Routes
-app.use('/api/auth', authRoutes)
-app.use('/api/properties', propertyRoutes)
-app.use('/api/posts', postRoutes)
-app.use('/api/users', userRoutes)
-app.use('/api/services', serviceRoutes)
-app.use('/api/bookings', bookingRoutes)
-app.use('/api/dashboard', dashboardRoutes)
-app.use('/api/upload', uploadRoutes) // ✅ ENABLED
 
 // 404 handler
 app.use((req, res) => {
@@ -79,55 +108,5 @@ app.use((err, req, res, next) => {
     error: process.env.NODE_ENV === 'development' ? err.message : undefined
   })
 })
-
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI
-if (!MONGODB_URI) throw new Error('❌ MONGODB_URI is missing!')
-
-let cached = global.mongoose
-if (!cached) cached = global.mongoose = { conn: null, promise: null }
-
-export async function connectToDatabase() {
-  if (cached.conn) {
-    console.log('Using cached MongoDB connection')
-    return cached.conn
-  }
-  
-  if (!cached.promise) {
-    const opts = {
-      bufferCommands: false,
-      serverSelectionTimeoutMS: 30000,
-      socketTimeoutMS: 45000,
-      connectTimeoutMS: 30000,
-      maxPoolSize: 10,
-      minPoolSize: 2
-    }
-    
-    console.log('Connecting to MongoDB...')
-    cached.promise = mongoose.connect(MONGODB_URI, opts)
-      .then(m => {
-        console.log('✅ MongoDB connected successfully')
-        return m.connection
-      })
-      .catch(err => {
-        console.error('❌ MongoDB connection failed:', err.message)
-        cached.promise = null
-        throw err
-      })
-  }
-  
-  try {
-    cached.conn = await cached.promise
-  } catch (err) {
-    cached.promise = null
-    throw err
-  }
-  
-  return cached.conn
-}
-
-connectToDatabase()
-  .then(() => console.log('✅ MongoDB connected'))
-  .catch(err => console.error('❌ MongoDB error', err))
 
 export default app
