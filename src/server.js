@@ -88,29 +88,41 @@ let cached = global.mongoose
 if (!cached) cached = global.mongoose = { conn: null, promise: null }
 
 export async function connectToDatabase() {
-  if (cached.conn) return cached.conn
+  if (cached.conn) {
+    console.log('Using cached MongoDB connection')
+    return cached.conn
+  }
   
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 30000,  // 30 seconds
-      socketTimeoutMS: 45000,            // 45 seconds
-      connectTimeoutMS: 30000            // 30 seconds
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 45000,
+      connectTimeoutMS: 30000,
+      maxPoolSize: 10,
+      minPoolSize: 2
     }
     
+    console.log('Connecting to MongoDB...')
     cached.promise = mongoose.connect(MONGODB_URI, opts)
       .then(m => {
-        console.log('✅ MongoDB connected')
+        console.log('✅ MongoDB connected successfully')
         return m.connection
       })
       .catch(err => {
-        console.error('❌ MongoDB error:', err.message)
+        console.error('❌ MongoDB connection failed:', err.message)
         cached.promise = null
         throw err
       })
   }
   
-  cached.conn = await cached.promise
+  try {
+    cached.conn = await cached.promise
+  } catch (err) {
+    cached.promise = null
+    throw err
+  }
+  
   return cached.conn
 }
 
