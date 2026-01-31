@@ -1,398 +1,408 @@
-// src/routes/auth.routes.js
-import express from 'express';
-import { body, validationResult } from 'express-validator';
-import jwt from 'jsonwebtoken';
-import User from '../models/User.model.js';
-import { protect } from '../middleware/auth.middleware.js';
-import passport from 'passport';
+import express from 'express'
+import bcrypt from 'bcryptjs'
+import jwt from 'jsonwebtoken'
+import User from '../models/User.model.js'
 
-const router = express.Router();
+const router = express.Router()
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
-
-console.log('🔑 JWT_SECRET loaded:', JWT_SECRET ? JWT_SECRET.substring(0, 10) + '...' : 'NOT SET');
-
-// Generate JWT token
-const generateToken = (id) => {
-  console.log('🎫 Generating token for user ID:', id);
-  console.log('🔑 Using JWT_SECRET:', JWT_SECRET.substring(0, 10) + '...');
-  
-  const token = jwt.sign({ id }, JWT_SECRET, {
-    expiresIn: '30d'
-  });
-  
-  console.log('✅ Token generated:', token.substring(0, 30) + '...');
-  return token;
-};
-
-// ============================================
-// DEBUG ENDPOINT (Remove in production!)
-// ============================================
-router.post('/debug-token', (req, res) => {
+// ========================
+// REGISTER
+// ========================
+router.post('/register', async (req, res) => {
   try {
-    const { token } = req.body;
-    
-    console.log('🔍 DEBUG: Token verification test');
-    console.log('📝 Token received:', token ? token.substring(0, 30) + '...' : 'NO TOKEN');
-    console.log('🔑 Server JWT_SECRET:', JWT_SECRET.substring(0, 10) + '...');
-    
-    if (!token) {
-      return res.json({
+    const { name, email, password, role } = req.body
+
+    console.log('📝 Register attempt:', { name, email, role })
+    console.log('📝 Password received:', password ? `Yes (${password.length} chars)` : 'No')
+
+    // Validation
+    if (!name || !email || !password) {
+      return res.status(400).json({
         success: false,
-        message: 'No token provided',
-        secretPresent: !!JWT_SECRET,
-        secretPreview: JWT_SECRET.substring(0, 10) + '...'
-      });
+        message: 'Please provide all required fields'
+      })
     }
 
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET);
-      console.log('✅ Token is VALID');
-      console.log('📦 Decoded payload:', decoded);
-      
-      return res.json({
-        success: true,
-        message: 'Token is valid!',
-        decoded: decoded,
-        secretPresent: !!JWT_SECRET
-      });
-    } catch (err) {
-      console.log('❌ Token verification FAILED:', err.message);
-      
-      return res.json({
+    if (password.length < 6) {
+      return res.status(400).json({
         success: false,
-        message: 'Token is INVALID',
-        error: err.message,
-        errorType: err.name,
-        secretPresent: !!JWT_SECRET
-      });
-    }
-  } catch (error) {
-    console.error('Debug endpoint error:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
-  }
-});
-
-router.post('/register', [
-  body('name').trim().notEmpty(),
-  body('email').isEmail(),
-  body('password').isLength({ min: 6 }),
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Validation failed',
-        errors: errors.array() 
-      });
+        message: 'Password must be at least 6 characters'
+      })
     }
 
-    const { name, email, password, role, phone, university } = req.body;
+    // Check if user exists
+    const existingUser = await User.findOne({ 
+      email: email.toLowerCase() 
+    })
 
-    console.log('📝 Registration attempt:', { email, role });
-
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'User already exists' 
-      });
+    if (existingUser) {
+      console.log('❌ User already exists:', email)
+      return res.status(400).json({
+        success: false,
+        message: 'User already exists'
+      })
     }
 
-    const user = await User.create({
-      name,
-      email,
-      password,
+    // Hash password
+    console.log('🔐 Hashing password...')
+    const hashedPassword = await bcrypt.hash(password, 10)
+    console.log('✅ Password hashed, length:', hashedPassword.length)
+
+    // Create user with EXPLICIT fields
+    console.log('👤 Creating user...')
+    const newUser = new User({
+      name: name,
+      email: email.toLowerCase(),
+      password: hashedPassword,
       role: role || 'student',
-      phone,
-      university,
-      avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=219ebc&color=fff`
-    });
+      provider: 'local',
+      avatar: 'https://via.placeholder.com/150'
+    })
 
-    console.log('✅ User created:', { id: user._id, email: user.email, role: user.role });
+    // Save
+    await newUser.save()
+    console.log('✅ User saved to database')
 
-    const token = generateToken(user._id);
+    // Verify password was saved
+    const savedUser = await User.findById(newUser._id)
+    console.log('🔍 Verification - User has password:', !!savedUser.password)
+    console.log('🔍 Password length in DB:', savedUser.password?.length)
+
+    // Generate token
+    const token = jwt.sign(
+      { 
+        id: savedUser._id,
+        email: savedUser.email,
+        role: savedUser.role 
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '30d' }
+    )
+
+    console.log('✅ Registration complete:', savedUser.email)
 
     res.status(201).json({
       success: true,
-      token,
+      message: 'Registration successful',
       user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        phone: user.phone,
-        university: user.university,
-        avatar: user.avatar
-      }
-    });
+        _id: savedUser._id,
+        name: savedUser.name,
+        email: savedUser.email,
+        role: savedUser.role,
+        avatar: savedUser.avatar
+      },
+      token
+    })
   } catch (error) {
-    console.error('❌ Register error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Registration failed' 
-    });
+    console.error('❌ Registration error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Registration failed',
+      error: error.message
+    })
   }
-});
+})
 
-// ============================================
+// ========================
 // LOGIN
-// ============================================
-router.post('/login', [
-  body('email').isEmail(),
-  body('password').notEmpty()
-], async (req, res) => {
+// ========================
+router.post('/login', async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Validation failed',
-        errors: errors.array() 
-      });
+    const { email, password } = req.body
+
+    console.log('🔐 Login attempt:', email)
+
+    // Validation
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please provide email and password'
+      })
     }
 
-    const { email, password } = req.body;
+    // Find user
+    const user = await User.findOne({ 
+      email: email.toLowerCase() 
+    }).lean().exec()
 
-    console.log('🔐 Login attempt:', email);
-
-    const user = await User.findOne({ email }).select('+password');
     if (!user) {
-      console.log('❌ User not found');
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Invalid email or password' 
-      });
+      console.log('❌ User not found:', email)
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      })
     }
 
-    const isMatch = await user.comparePassword(password);
+    console.log('👤 User found:', user.email)
+    console.log('🔑 User has password:', !!user.password)
+
+    // Check if password exists (OAuth users don't have passwords)
+    if (!user.password) {
+      console.log('❌ OAuth user trying credentials login:', email)
+      return res.status(401).json({
+        success: false,
+        message: 'This account uses Google/Facebook login. Please sign in with the same method you used to create your account.'
+      })
+    }
+
+    // Compare password
+    console.log('🔍 Comparing passwords...')
+    const isMatch = await bcrypt.compare(password, user.password)
+    console.log('✅ Password match:', isMatch)
+
     if (!isMatch) {
-      console.log('❌ Password mismatch');
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Invalid email or password' 
-      });
+      console.log('❌ Invalid password for:', email)
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      })
     }
 
-    console.log('✅ Login successful:', { id: user._id, role: user.role });
+    // Generate token
+    const token = jwt.sign(
+      { 
+        id: user._id,
+        email: user.email,
+        role: user.role 
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '30d' }
+    )
 
-    const token = generateToken(user._id);
+    console.log('✅ Login successful:', email)
 
     res.json({
       success: true,
-      token,
+      message: 'Login successful',
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
+        avatar: user.avatar,
         phone: user.phone,
         university: user.university,
-        avatar: user.avatar,
         bio: user.bio,
         location: user.location
-      }
-    });
+      },
+      token
+    })
   } catch (error) {
-    console.error('❌ Login error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: error.message || 'Login failed' 
-    });
+    console.error('❌ Login error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Login failed',
+      error: error.message
+    })
   }
-});
+})
 
-// ============================================
-// OAUTH LOGIN/REGISTER
-// ============================================
+// ========================
+// OAUTH
+// ========================
 router.post('/oauth', async (req, res) => {
   try {
-    const { email, name, avatar, provider, providerId, role } = req.body;
+    const { email, name, avatar, provider, role } = req.body
 
-    if (!email || !name || !provider || !providerId) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Missing required fields' 
-      });
-    }
+    console.log('🔐 OAuth attempt:', email, provider)
 
-    console.log('🔐 OAuth login attempt:', { email, provider });
+    // Find or create user
+    let user = await User.findOne({ 
+      email: email.toLowerCase() 
+    }).lean().exec()
 
-    let user = await User.findOne({ email });
-
-    if (user) {
-      console.log('✅ Existing user found');
-      
-      if (!user.oauthProviders) {
-        user.oauthProviders = [];
-      }
-
-      const providerExists = user.oauthProviders.find(
-        p => p.provider === provider && p.providerId === providerId
-      );
-
-      if (!providerExists) {
-        user.oauthProviders.push({ provider, providerId });
-      }
-
-      if (!user.avatar || user.avatar.includes('ui-avatars.com')) {
-        user.avatar = avatar || user.avatar;
-      }
-
-      user.isVerified = true;
-      await user.save();
-    } else {
-      console.log('📝 Creating new OAuth user');
-      
+    if (!user) {
+      // Create new OAuth user (without password)
       user = await User.create({
         name,
-        email,
+        email: email.toLowerCase(),
+        avatar,
         role: role || 'student',
-        avatar: avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}`,
-        password: Math.random().toString(36).slice(-12),
-        oauthProviders: [{ provider, providerId }],
-        isVerified: true
-      });
+        provider
+      })
+      console.log('✅ OAuth user created:', email)
+    } else {
+      console.log('✅ OAuth user found:', email)
     }
 
-    const token = generateToken(user._id);
+    // Generate token
+    const token = jwt.sign(
+      { 
+        id: user._id,
+        email: user.email,
+        role: user.role 
+      },
+      process.env.JWT_SECRET || 'your-secret-key',
+      { expiresIn: '30d' }
+    )
 
     res.json({
       success: true,
-      token,
+      message: 'OAuth successful',
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
         avatar: user.avatar
-      }
-    });
+      },
+      token
+    })
   } catch (error) {
-    console.error('❌ OAuth error:', error);
-    res.status(500).json({ success: false, message: 'OAuth failed' });
+    console.error('❌ OAuth error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'OAuth failed',
+      error: error.message
+    })
   }
-});
+})
 
-// ============================================
-// GET PROFILE (Protected)
-// ============================================
-router.get('/profile', protect, async (req, res) => {
+// ========================
+// GET PROFILE
+// ========================
+router.get('/profile', async (req, res) => {
   try {
-    console.log('👤 Get profile for user:', req.user.id);
-    
-    const user = await User.findById(req.user.id).select('-password');
-    
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+    const { email } = req.query
+
+    console.log('📡 GET Profile request for:', email)
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      })
     }
 
-    console.log('✅ Profile retrieved:', user.email);
+    const user = await User.findOne({ 
+      email: email.toLowerCase() 
+    })
+      .select('-password')
+      .lean()
+      .exec()
 
-    res.json({ success: true, user });
-  } catch (error) {
-    console.error('❌ Get profile error:', error);
-    res.status(500).json({ success: false, message: 'Failed to get profile' });
-  }
-});
-
-// ============================================
-// UPDATE PROFILE (Protected)
-// ============================================
-router.put('/profile', protect, async (req, res) => {
-  try {
-    const { name, phone, university, bio, avatar, location } = req.body;
-    
-    console.log('💾 Update profile for user:', req.user.id);
-    console.log('📝 Update data:', { name, phone, university });
-    
-    const user = await User.findById(req.user.id);
-    
     if (!user) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      console.log('❌ User not found:', email)
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
     }
 
-    if (name) user.name = name;
-    if (phone !== undefined) user.phone = phone;
-    if (university !== undefined) user.university = university;
-    if (bio !== undefined) user.bio = bio;
-    if (avatar) user.avatar = avatar;
-    if (location !== undefined) user.location = location;
-
-    await user.save();
-
-    console.log('✅ Profile updated successfully');
+    console.log('✅ Profile fetched:', {
+      name: user.name,
+      email: user.email,
+      role: user.role
+    })
 
     res.json({
       success: true,
-      message: 'Profile updated',
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        phone: user.phone,
-        avatar: user.avatar,
-        university: user.university,
-        bio: user.bio,
-        location: user.location
-      }
-    });
+      user
+    })
   } catch (error) {
-    console.error('❌ Update profile error:', error);
-    res.status(500).json({ success: false, message: 'Update failed' });
+    console.error('❌ Get profile error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get profile',
+      error: error.message
+    })
   }
-});
+})
 
-// ============================================
-// GOOGLE OAUTH ROUTES
-// ============================================
-router.get('/google', passport.authenticate('google', { 
-  scope: ['profile', 'email'],
-  session: false 
-}))
+// ========================
+// UPDATE PROFILE
+// ========================
+router.put('/profile', async (req, res) => {
+  try {
+    const { email, name, phone, university, bio, location, avatar } = req.body
 
-router.get('/callback/google', 
-  passport.authenticate('google', { 
-    session: false,
-    failureRedirect: `${FRONTEND_URL}/login?error=auth_failed` 
-  }),
-  (req, res) => {
-    try {
-      const token = generateToken(req.user._id)
-      res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`)
-    } catch (error) {
-      res.redirect(`${FRONTEND_URL}/login?error=token_generation_failed`)
+    console.log('📝 PUT Profile request for:', email)
+    console.log('📝 Update data:', { name, phone, university, bio, location, avatar })
+
+    if (!email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      })
     }
-  }
-)
 
-// ============================================
-// FACEBOOK OAUTH ROUTES
-// ============================================
-router.get('/facebook', passport.authenticate('facebook', { 
-  scope: ['email'],
-  session: false 
-}))
+    // Find and update user
+    const updatedUser = await User.findOneAndUpdate(
+      { email: email.toLowerCase() },
+      {
+        $set: {
+          name: name,
+          phone: phone,
+          university: university,
+          bio: bio,
+          location: location,
+          avatar: avatar,
+          updatedAt: new Date()
+        }
+      },
+      { new: true }
+    )
+      .select('-password')
+      .lean()
+      .exec()
 
-router.get('/callback/facebook',
-  passport.authenticate('facebook', { 
-    session: false,
-    failureRedirect: `${FRONTEND_URL}/login?error=auth_failed` 
-  }),
-  (req, res) => {
-    try {
-      const token = generateToken(req.user._id)
-      res.redirect(`${FRONTEND_URL}/auth/callback?token=${token}`)
-    } catch (error) {
-      res.redirect(`${FRONTEND_URL}/login?error=token_generation_failed`)
+    if (!updatedUser) {
+      console.log('❌ User not found:', email)
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      })
     }
-  }
-)
 
-export default router;
+    console.log('✅ Profile updated successfully:', {
+      name: updatedUser.name,
+      email: updatedUser.email
+    })
+
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      user: updatedUser
+    })
+  } catch (error) {
+    console.error('❌ Update profile error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update profile',
+      error: error.message
+    })
+  }
+})
+
+// ========================
+// DELETE USER (Development Only)
+// ========================
+router.delete('/delete-user/:email', async (req, res) => {
+  try {
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(403).json({
+        success: false,
+        message: 'This endpoint is disabled in production'
+      })
+    }
+
+    const { email } = req.params
+    const result = await User.deleteOne({ email: email.toLowerCase() })
+    
+    console.log('🗑️ User deleted:', email, result)
+    
+    res.json({ 
+      success: true, 
+      message: 'User deleted',
+      deletedCount: result.deletedCount
+    })
+  } catch (error) {
+    console.error('❌ Delete error:', error)
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    })
+  }
+})
+
+export default router

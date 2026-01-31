@@ -2,8 +2,8 @@ import { NextAuthOptions } from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
 import FacebookProvider from 'next-auth/providers/facebook'
 import CredentialsProvider from 'next-auth/providers/credentials'
-import bcrypt from 'bcryptjs'
-import { getUserByEmail, createUser, updateUser } from '@/lib/db'
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000'
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -32,31 +32,52 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
-          return null
+          console.error('❌ Missing credentials')
+          throw new Error('Please enter email and password')
         }
 
-        const email = credentials.email.trim().toLowerCase()
-        const user = getUserByEmail(email)
+        try {
+          console.log('🔐 Attempting login to:', `${API_URL}/api/auth/login`)
+          console.log('📧 Email:', credentials.email)
+          
+          const res = await fetch(`${API_URL}/api/auth/login`, {
+            method: 'POST',
+            headers: { 
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            },
+            body: JSON.stringify({
+              email: credentials.email.trim().toLowerCase(),
+              password: credentials.password,
+            }),
+          })
 
-        if (!user || !user.password) {
-          return null
-        }
+          console.log('📡 Response status:', res.status)
 
-        const isPasswordValid = await bcrypt.compare(
-          credentials.password,
-          user.password
-        )
+          if (!res.ok) {
+            const errorData = await res.json().catch(() => ({}))
+            console.error('❌ Login failed:', errorData)
+            throw new Error(errorData.message || 'Invalid credentials')
+          }
 
-        if (!isPasswordValid) {
-          return null
-        }
+          const data = await res.json()
+          console.log('✅ Login successful:', data)
 
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          image: user.image
+          if (!data.success || !data.user) {
+            throw new Error('Invalid response from server')
+          }
+
+          return {
+            id: data.user._id || data.user.id,
+            email: data.user.email,
+            name: data.user.name,
+            role: data.user.role || 'student',
+            image: data.user.avatar || data.user.image,
+            accessToken: data.token
+          }
+        } catch (error: any) {
+          console.error('❌ Authorize error:', error)
+          throw error
         }
       }
     })
@@ -66,46 +87,49 @@ export const authOptions: NextAuthOptions = {
     async signIn({ user, account, profile }) {
       if (account?.provider === 'google' || account?.provider === 'facebook') {
         try {
-          const existingUser = getUserByEmail(user.email!)
+          console.log('🔐 OAuth sign in:', user.email)
+          
+          const res = await fetch(`${API_URL}/api/auth/oauth`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email: user.email,
+              name: user.name,
+              avatar: user.image,
+              provider: account.provider,
+              role: 'student'
+            }),
+          })
 
-          if (!existingUser) {
-            // Create new user for OAuth
-            createUser({
-              name: user.name || 'User',
-              email: user.email!,
-              password: '',
-              image: user.image || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.name || 'User')}&background=219ebc&color=fff`,
-              role: 'student',
-              provider: account.provider
-            })
-          } else {
-            // Update user image if they don't have one
-            if (!existingUser.image && user.image) {
-              updateUser(existingUser.id, { image: user.image })
-            }
+          const data = await res.json()
+
+          if (data.success && data.user) {
+            user.id = data.user._id || data.user.id
+            user.name = data.user.name
+            user.image = data.user.avatar || data.user.image
+            ;(user as any).role = data.user.role
+            ;(user as any).accessToken = data.token
           }
         } catch (error) {
-          console.error('OAuth sign in error:', error)
-          return false
+          console.error('❌ OAuth error:', error)
         }
       }
       return true
     },
 
-    async jwt({ token, user, account }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.id = user.id
-        token.role = user.role || 'student'
+        token.role = (user as any).role || 'student'
+        token.accessToken = (user as any).accessToken
+        console.log('✅ JWT token created:', { id: token.id, role: token.role })
       }
-      
-      if (account?.provider === 'google' || account?.provider === 'facebook') {
-        const dbUser = getUserByEmail(token.email!)
-        if (dbUser) {
-          token.role = dbUser.role
-          token.image = dbUser.image
-        }
+
+      if (trigger === 'update' && session?.user) {
+        if (session.user.name) token.name = session.user.name
+        if (session.user.image) token.picture = session.user.image
       }
-      
+
       return token
     },
 
@@ -113,9 +137,29 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         session.user.id = token.id as string
         session.user.role = token.role as string
-        session.user.image = token.image as string
+        session.user.name = token.name as string
+        session.user.image = token.picture as string
+        ;(session as any).accessToken = token.accessToken
       }
       return session
+    },
+
+    async redirect({ url, baseUrl }) {
+      const APP_URL = process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL || baseUrl
+      
+      if (url.startsWith('/')) {
+        return `${APP_URL}${url}`
+      }
+      
+      try {
+        const urlObj = new URL(url)
+        const appUrlObj = new URL(APP_URL)
+        if (urlObj.origin === appUrlObj.origin) {
+          return url
+        }
+      } catch (e) {}
+      
+      return `${APP_URL}/dashboard`
     }
   },
 
@@ -129,6 +173,6 @@ export const authOptions: NextAuthOptions = {
     maxAge: 30 * 24 * 60 * 60,
   },
 
-  debug: process.env.NODE_ENV === 'development',
-  secret: process.env.NEXTAUTH_SECRET || 'your-secret-key-change-this',
+  secret: process.env.NEXTAUTH_SECRET,
+  debug: true, // Enable debug logs
 }
