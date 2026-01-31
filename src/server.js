@@ -4,10 +4,14 @@ import cors from 'cors'
 import dotenv from 'dotenv'
 import cookieParser from 'cookie-parser'
 import passport from 'passport'
+import compression from 'compression'
 
 dotenv.config()
 
 const app = express()
+
+// Compression middleware for faster responses
+app.use(compression())
 
 // Middleware
 app.use(cors({
@@ -18,12 +22,21 @@ app.use(cors({
   ],
   credentials: true
 }))
-app.use(express.json({ limit: '50mb' }))
-app.use(express.urlencoded({ extended: true, limit: '50mb' }))
+
+// Increase payload limit but add timeout
+app.use(express.json({ limit: '10mb' }))
+app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser())
 app.use(passport.initialize())
 
-// MongoDB Connection with BETTER error handling
+// Request timeout middleware
+app.use((req, res, next) => {
+  req.setTimeout(30000) // 30 seconds
+  res.setTimeout(30000)
+  next()
+})
+
+// MongoDB Connection with ENHANCED RETRY LOGIC
 const MONGODB_URI = process.env.MONGODB_URI
 
 if (!MONGODB_URI) {
@@ -36,42 +49,94 @@ console.log('📍 URI:', MONGODB_URI.substring(0, 30) + '...')
 
 mongoose.set('strictQuery', false)
 
-const connectDB = async () => {
-  try {
-    await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000, // Reduced from 10000
-      socketTimeoutMS: 45000,
-      maxPoolSize: 10,
-      minPoolSize: 5,
-      connectTimeoutMS: 10000,
-      retryWrites: true,
-      w: 'majority'
-    })
-    console.log('✅ MongoDB Connected Successfully')
-    console.log('📊 Database:', mongoose.connection.name)
-  } catch (error) {
-    console.error('❌ MongoDB Connection Error:', error.message)
-    console.error('Full error:', error)
-    // In serverless, don't exit process
-    if (process.env.NODE_ENV !== 'production') {
-      process.exit(1)
+// Enhanced connection function with retry logic
+let isConnected = false
+
+const connectDB = async (retries = 5) => {
+  if (isConnected) {
+    console.log('✅ Using existing MongoDB connection')
+    return
+  }
+
+  for (let i = 1; i <= retries; i++) {
+    try {
+      console.log(`🔄 Connection attempt ${i}/${retries}...`)
+      
+      await mongoose.connect(MONGODB_URI, {
+        serverSelectionTimeoutMS: 30000, // Increased to 30 seconds
+        socketTimeoutMS: 75000, // Increased to 75 seconds
+        connectTimeoutMS: 30000, // Increased to 30 seconds
+        maxPoolSize: 50,
+        minPoolSize: 10,
+        maxIdleTimeMS: 60000, // Increased to 60 seconds
+        retryWrites: true,
+        w: 'majority',
+        family: 4,
+        compressors: ['zlib']
+      })
+      
+      isConnected = true
+      console.log('✅ MongoDB Connected Successfully')
+      console.log('📊 Database:', mongoose.connection.name)
+      console.log('🌐 Host:', mongoose.connection.host)
+      return
+
+    } catch (error) {
+      console.error(`❌ Connection attempt ${i} failed:`, error.message)
+      
+      if (i === retries) {
+        console.error('❌ All connection attempts failed')
+        console.error('Full error:', error)
+        
+        // Don't exit in production, keep trying
+        if (process.env.NODE_ENV !== 'production') {
+          process.exit(1)
+        }
+      } else {
+        // Wait before retrying (exponential backoff)
+        const waitTime = Math.min(1000 * Math.pow(2, i), 10000)
+        console.log(`⏳ Waiting ${waitTime}ms before retry...`)
+        await new Promise(resolve => setTimeout(resolve, waitTime))
+      }
     }
   }
 }
 
 // Handle connection events
 mongoose.connection.on('connected', () => {
+  isConnected = true
   console.log('✅ Mongoose connected to MongoDB')
 })
 
 mongoose.connection.on('error', (err) => {
   console.error('❌ Mongoose connection error:', err)
+  isConnected = false
 })
 
 mongoose.connection.on('disconnected', () => {
   console.log('⚠️ Mongoose disconnected')
+  isConnected = false
+  
+  // Try to reconnect after 5 seconds
+  setTimeout(() => {
+    console.log('🔄 Attempting to reconnect...')
+    connectDB()
+  }, 5000)
 })
 
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  try {
+    await mongoose.connection.close()
+    console.log('MongoDB connection closed through app termination')
+    process.exit(0)
+  } catch (err) {
+    console.error('Error closing MongoDB connection:', err)
+    process.exit(1)
+  }
+})
+
+// Connect to database
 await connectDB()
 
 // Import config AFTER connection
@@ -100,10 +165,19 @@ app.get('/', (req, res) => {
 })
 
 app.get('/api/health', (req, res) => {
+  const dbState = mongoose.connection.readyState
+  const dbStatus = {
+    0: 'Disconnected',
+    1: 'Connected',
+    2: 'Connecting',
+    3: 'Disconnecting'
+  }
+
   res.json({ 
-    status: 'OK',
-    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
-    database: mongoose.connection.name,
+    status: dbState === 1 ? 'OK' : 'WARNING',
+    mongodb: dbStatus[dbState] || 'Unknown',
+    database: mongoose.connection.name || 'N/A',
+    host: mongoose.connection.host || 'N/A',
     uptime: process.uptime(),
     timestamp: new Date().toISOString()
   })

@@ -1,246 +1,52 @@
 import express from 'express'
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import crypto from 'crypto'
 import User from '../models/User.model.js'
+import { checkConnection } from '../middleware/checkConnection.js'
 
 const router = express.Router()
 
-// ========================
-// REGISTER
-// ========================
+// Register
 router.post('/register', async (req, res) => {
   try {
-    const { name, email, password, role } = req.body
-
-    console.log('📝 Register attempt:', { name, email, role })
-    console.log('📝 Password received:', password ? `Yes (${password.length} chars)` : 'No')
-
-    // Validation
-    if (!name || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide all required fields'
-      })
-    }
-
-    if (password.length < 6) {
-      return res.status(400).json({
-        success: false,
-        message: 'Password must be at least 6 characters'
-      })
-    }
+    const { name, email, password, phone, role } = req.body
 
     // Check if user exists
-    const existingUser = await User.findOne({ 
-      email: email.toLowerCase() 
-    })
-
+    const existingUser = await User.findOne({ email: email.toLowerCase() })
     if (existingUser) {
-      console.log('❌ User already exists:', email)
       return res.status(400).json({
         success: false,
-        message: 'User already exists'
+        message: 'User already exists with this email'
       })
     }
 
     // Hash password
-    console.log('🔐 Hashing password...')
-    const hashedPassword = await bcrypt.hash(password, 10)
-    console.log('✅ Password hashed, length:', hashedPassword.length)
+    const bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS) || 10
+    const hashedPassword = await bcrypt.hash(password, bcryptRounds)
 
-    // Create user with EXPLICIT fields
-    console.log('👤 Creating user...')
-    const newUser = new User({
-      name: name,
+    // Create user
+    const user = await User.create({
+      name,
       email: email.toLowerCase(),
       password: hashedPassword,
+      phone: phone || '',
       role: role || 'student',
-      provider: 'local',
-      avatar: 'https://via.placeholder.com/150'
+      provider: 'local'
     })
 
-    // Save
-    await newUser.save()
-    console.log('✅ User saved to database')
-
-    // Verify password was saved
-    const savedUser = await User.findById(newUser._id)
-    console.log('🔍 Verification - User has password:', !!savedUser.password)
-    console.log('🔍 Password length in DB:', savedUser.password?.length)
-
-    // Generate token
+    // Generate JWT token
     const token = jwt.sign(
-      { 
-        id: savedUser._id,
-        email: savedUser.email,
-        role: savedUser.role 
-      },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '30d' }
+      { id: user._id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
     )
-
-    console.log('✅ Registration complete:', savedUser.email)
 
     res.status(201).json({
       success: true,
-      message: 'Registration successful',
+      message: 'User registered successfully',
       user: {
-        _id: savedUser._id,
-        name: savedUser.name,
-        email: savedUser.email,
-        role: savedUser.role,
-        avatar: savedUser.avatar
-      },
-      token
-    })
-  } catch (error) {
-    console.error('❌ Registration error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Registration failed',
-      error: error.message
-    })
-  }
-})
-
-// ========================
-// LOGIN
-// ========================
-router.post('/login', async (req, res) => {
-  try {
-    const { email, password } = req.body
-
-    console.log('🔐 Login attempt:', email)
-
-    // Validation
-    if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Please provide email and password'
-      })
-    }
-
-    // Find user
-    const user = await User.findOne({ 
-      email: email.toLowerCase() 
-    }).lean().exec()
-
-    if (!user) {
-      console.log('❌ User not found:', email)
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      })
-    }
-
-    console.log('👤 User found:', user.email)
-    console.log('🔑 User has password:', !!user.password)
-
-    // Check if password exists (OAuth users don't have passwords)
-    if (!user.password) {
-      console.log('❌ OAuth user trying credentials login:', email)
-      return res.status(401).json({
-        success: false,
-        message: 'This account uses Google/Facebook login. Please sign in with the same method you used to create your account.'
-      })
-    }
-
-    // Compare password
-    console.log('🔍 Comparing passwords...')
-    const isMatch = await bcrypt.compare(password, user.password)
-    console.log('✅ Password match:', isMatch)
-
-    if (!isMatch) {
-      console.log('❌ Invalid password for:', email)
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      })
-    }
-
-    // Generate token
-    const token = jwt.sign(
-      { 
         id: user._id,
-        email: user.email,
-        role: user.role 
-      },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '30d' }
-    )
-
-    console.log('✅ Login successful:', email)
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        avatar: user.avatar,
-        phone: user.phone,
-        university: user.university,
-        bio: user.bio,
-        location: user.location
-      },
-      token
-    })
-  } catch (error) {
-    console.error('❌ Login error:', error)
-    res.status(500).json({
-      success: false,
-      message: 'Login failed',
-      error: error.message
-    })
-  }
-})
-
-// ========================
-// OAUTH
-// ========================
-router.post('/oauth', async (req, res) => {
-  try {
-    const { email, name, avatar, provider, role } = req.body
-
-    console.log('🔐 OAuth attempt:', email, provider)
-
-    // Find or create user
-    let user = await User.findOne({ 
-      email: email.toLowerCase() 
-    }).lean().exec()
-
-    if (!user) {
-      // Create new OAuth user (without password)
-      user = await User.create({
-        name,
-        email: email.toLowerCase(),
-        avatar,
-        role: role || 'student',
-        provider
-      })
-      console.log('✅ OAuth user created:', email)
-    } else {
-      console.log('✅ OAuth user found:', email)
-    }
-
-    // Generate token
-    const token = jwt.sign(
-      { 
-        id: user._id,
-        email: user.email,
-        role: user.role 
-      },
-      process.env.JWT_SECRET || 'your-secret-key',
-      { expiresIn: '30d' }
-    )
-
-    res.json({
-      success: true,
-      message: 'OAuth successful',
-      user: {
-        _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -249,7 +55,123 @@ router.post('/oauth', async (req, res) => {
       token
     })
   } catch (error) {
-    console.error('❌ OAuth error:', error)
+    console.error('Register error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Registration failed',
+      error: error.message
+    })
+  }
+})
+
+// Login
+router.post('/login', async (req, res) => {
+  try {
+    const { email, password } = req.body
+
+    // Find user and include password
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+password')
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      })
+    }
+
+    // Check if user registered with OAuth
+    if (user.provider !== 'local' || !user.password) {
+      return res.status(401).json({
+        success: false,
+        message: `This account is registered with ${user.provider}. Please use ${user.provider} to login.`
+      })
+    }
+
+    // Verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password)
+
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      })
+    }
+
+    // Generate JWT token
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    )
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar,
+        phone: user.phone,
+        location: user.location,
+        university: user.university,
+        bio: user.bio
+      },
+      token
+    })
+  } catch (error) {
+    console.error('Login error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Login failed',
+      error: error.message
+    })
+  }
+})
+
+// OAuth (Google/Facebook)
+router.post('/oauth', async (req, res) => {
+  try {
+    const { email, name, image, provider } = req.body
+
+    let user = await User.findOne({ email: email.toLowerCase() })
+
+    if (!user) {
+      // Create new user
+      user = await User.create({
+        name,
+        email: email.toLowerCase(),
+        avatar: image,
+        provider: provider || 'google',
+        verified: true
+      })
+    } else {
+      // Update existing user
+      user.name = name
+      user.avatar = image
+      await user.save()
+    }
+
+    const token = jwt.sign(
+      { id: user._id, email: user.email, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    )
+
+    res.json({
+      success: true,
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        avatar: user.avatar
+      },
+      token
+    })
+  } catch (error) {
+    console.error('OAuth error:', error)
     res.status(500).json({
       success: false,
       message: 'OAuth failed',
@@ -258,66 +180,64 @@ router.post('/oauth', async (req, res) => {
   }
 })
 
-// ========================
-// GET PROFILE
-// ========================
+// GET profile
 router.get('/profile', async (req, res) => {
   try {
-    const { email } = req.query
+    const { email, id } = req.query
 
-    console.log('📡 GET Profile request for:', email)
+    console.log('📥 Profile fetch request:', { email, id })
 
-    if (!email) {
+    if (!email && !id) {
       return res.status(400).json({
         success: false,
-        message: 'Email is required'
+        message: 'Email or ID is required'
       })
     }
 
-    const user = await User.findOne({ 
-      email: email.toLowerCase() 
-    })
-      .select('-password')
-      .lean()
-      .exec()
+    // Try to find by email first, then by id
+    let user = null
+    
+    if (email) {
+      user = await User.findOne({ email }).select('-password').lean()
+    }
+    
+    if (!user && id) {
+      user = await User.findById(id).select('-password').lean()
+    }
 
     if (!user) {
-      console.log('❌ User not found:', email)
+      console.log('❌ User not found with email:', email, 'or id:', id)
       return res.status(404).json({
         success: false,
         message: 'User not found'
       })
     }
 
-    console.log('✅ Profile fetched:', {
-      name: user.name,
-      email: user.email,
-      role: user.role
-    })
+    console.log('✅ User found:', user.email)
+
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+    res.setHeader('Pragma', 'no-cache')
 
     res.json({
       success: true,
       user
     })
   } catch (error) {
-    console.error('❌ Get profile error:', error)
+    console.error('❌ Profile fetch error:', error)
     res.status(500).json({
       success: false,
-      message: 'Failed to get profile',
+      message: 'Failed to fetch profile',
       error: error.message
     })
   }
 })
 
-// ========================
-// UPDATE PROFILE
-// ========================
+// PUT update profile
 router.put('/profile', async (req, res) => {
   try {
-    const { email, name, phone, university, bio, location, avatar } = req.body
+    const { email, name, phone, location, university, bio, avatar } = req.body
 
-    console.log('📝 PUT Profile request for:', email)
-    console.log('📝 Update data:', { name, phone, university, bio, location, avatar })
+    console.log('📥 Update profile request:', { email, name })
 
     if (!email) {
       return res.status(400).json({
@@ -326,38 +246,41 @@ router.put('/profile', async (req, res) => {
       })
     }
 
-    // Find and update user
-    const updatedUser = await User.findOneAndUpdate(
-      { email: email.toLowerCase() },
-      {
-        $set: {
-          name: name,
-          phone: phone,
-          university: university,
-          bio: bio,
-          location: location,
-          avatar: avatar,
-          updatedAt: new Date()
-        }
-      },
-      { new: true }
-    )
-      .select('-password')
-      .lean()
-      .exec()
+    // Find user
+    const user = await User.findOne({ email })
 
-    if (!updatedUser) {
+    if (!user) {
       console.log('❌ User not found:', email)
+      
+      // List all users for debugging (remove in production)
+      const allUsers = await User.find({}, 'email name').limit(5).lean()
+      console.log('📋 Existing users:', allUsers)
+      
       return res.status(404).json({
         success: false,
-        message: 'User not found'
+        message: 'User not found',
+        debug: {
+          searchedEmail: email,
+          existingUsers: allUsers.map(u => u.email)
+        }
       })
     }
 
-    console.log('✅ Profile updated successfully:', {
-      name: updatedUser.name,
-      email: updatedUser.email
-    })
+    console.log('✅ User found, updating...')
+
+    // Update fields
+    if (name) user.name = name.trim()
+    if (phone !== undefined) user.phone = phone
+    if (location !== undefined) user.location = location
+    if (university !== undefined) user.university = university
+    if (bio !== undefined) user.bio = bio
+    if (avatar) user.avatar = avatar
+
+    await user.save()
+
+    console.log('✅ Profile updated successfully')
+
+    const updatedUser = await User.findById(user._id).select('-password').lean()
 
     res.json({
       success: true,
@@ -374,33 +297,92 @@ router.put('/profile', async (req, res) => {
   }
 })
 
-// ========================
-// DELETE USER (Development Only)
-// ========================
-router.delete('/delete-user/:email', async (req, res) => {
+// Forgot Password
+router.post('/forgot-password', async (req, res) => {
   try {
-    if (process.env.NODE_ENV === 'production') {
-      return res.status(403).json({
-        success: false,
-        message: 'This endpoint is disabled in production'
+    const { email } = req.body
+
+    const user = await User.findOne({ email: email.toLowerCase() })
+
+    if (!user) {
+      // Don't reveal if user exists
+      return res.json({
+        success: true,
+        message: 'If an account exists, a password reset link has been sent'
       })
     }
 
-    const { email } = req.params
-    const result = await User.deleteOne({ email: email.toLowerCase() })
-    
-    console.log('🗑️ User deleted:', email, result)
-    
-    res.json({ 
-      success: true, 
-      message: 'User deleted',
-      deletedCount: result.deletedCount
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex')
+    const hashedToken = crypto.createHash('sha256').update(resetToken).digest('hex')
+
+    user.resetPasswordToken = hashedToken
+    user.resetPasswordExpire = Date.now() + 30 * 60 * 1000 // 30 minutes
+    await user.save()
+
+    // TODO: Send email with reset link
+    console.log('Reset token:', resetToken)
+    console.log('Reset link:', `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`)
+
+    res.json({
+      success: true,
+      message: 'Password reset link sent to email',
+      // For development only - remove in production
+      resetToken: process.env.NODE_ENV === 'development' ? resetToken : undefined
     })
   } catch (error) {
-    console.error('❌ Delete error:', error)
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
+    console.error('Forgot password error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process request'
+    })
+  }
+})
+
+// Reset Password
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, password } = req.body
+
+    if (!token || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Token and password are required'
+      })
+    }
+
+    // Hash the token
+    const hashedToken = crypto.createHash('sha256').update(token).digest('hex')
+
+    // Find user with valid token
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
+      resetPasswordExpire: { $gt: Date.now() }
+    })
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid or expired reset token'
+      })
+    }
+
+    // Hash new password
+    const bcryptRounds = parseInt(process.env.BCRYPT_ROUNDS) || 10
+    user.password = await bcrypt.hash(password, bcryptRounds)
+    user.resetPasswordToken = undefined
+    user.resetPasswordExpire = undefined
+    await user.save()
+
+    res.json({
+      success: true,
+      message: 'Password reset successful'
+    })
+  } catch (error) {
+    console.error('Reset password error:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to reset password'
     })
   }
 })
