@@ -24,3 +24,4 @@ if (process.env.VERCEL !== '1') {
       console.error('⚠️ Cleanup cron not available:', err.message)
     })
 }
+
