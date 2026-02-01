@@ -17,9 +17,12 @@ app.use(compression())
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'https://campus-egypt-nextjs.vercel.app'
+    'https://campus-egypt-nextjs.vercel.app', // Your Vercel frontend
+    'https://student-housing-backend.vercel.app' // Your Vercel backend
   ],
-  credentials: true
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }))
 
 // Increase payload limit but add timeout
