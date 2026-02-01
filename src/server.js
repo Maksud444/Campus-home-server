@@ -62,6 +62,32 @@ app.get('/', (req, res) => {
   })
 })
 
+app.get('/api/test-db', async (req, res) => {
+  try {
+    await connectDB()
+    const state = mongoose.connection.readyState
+    const status = {
+      0: 'Disconnected',
+      1: 'Connected',
+      2: 'Connecting',
+      3: 'Disconnecting'
+    }
+    
+    res.json({
+      success: true,
+      mongodb: status[state],
+      readyState: state,
+      host: mongoose.connection.host || 'N/A',
+      name: mongoose.connection.name || 'N/A'
+    })
+  } catch (error) {
+    res.json({
+      success: false,
+      error: error.message,
+      mongodb: 'Failed to connect'
+    })
+  }
+})
 app.get('/api/health', (req, res) => {
   res.json({ 
     success: true, 
