@@ -96,6 +96,48 @@ app.get('/api/health', (req, res) => {
   })
 })
 
+// Debug endpoint - shows exact error
+app.get('/api/debug-mongo', async (req, res) => {
+  try {
+    const uri = process.env.MONGODB_URI
+    
+    if (!uri) {
+      return res.json({
+        success: false,
+        error: 'MONGODB_URI environment variable not found',
+        hasEnvVar: false
+      })
+    }
+
+    // Show masked URI
+    const maskedUri = uri.substring(0, 25) + '...' + uri.substring(uri.length - 20)
+    
+    // Try to connect
+    await mongoose.connect(uri, {
+      bufferCommands: false,
+      serverSelectionTimeoutMS: 5000
+    })
+
+    isConnected = true
+
+    res.json({
+      success: true,
+      hasEnvVar: true,
+      uriPreview: maskedUri,
+      readyState: mongoose.connection.readyState,
+      host: mongoose.connection.host,
+      database: mongoose.connection.name
+    })
+  } catch (error) {
+    res.json({
+      success: false,
+      error: error.message,
+      hasEnvVar: !!process.env.MONGODB_URI,
+      errorName: error.name
+    })
+  }
+})
+
 // Import routes with try-catch
 let routesLoaded = false
 
