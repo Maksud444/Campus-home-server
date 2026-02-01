@@ -9,7 +9,7 @@ dotenv.config()
 
 const app = express()
 
-// Basic middleware
+// Middleware
 app.use(compression())
 app.use(cors({
   origin: [
@@ -22,177 +22,84 @@ app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser())
 
+// MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || ''
 
 async function connectDB() {
-  // Check if already connected
   if (mongoose.connection.readyState === 1) {
     return true
   }
 
   try {
-    if (!MONGODB_URI) {
-      throw new Error('MONGODB_URI not found')
-    }
-
     await mongoose.connect(MONGODB_URI, {
       bufferCommands: false,
       serverSelectionTimeoutMS: 5000
     })
-    
-    console.log('MongoDB Connected')
+    console.log('✅ MongoDB Connected')
     return true
   } catch (error) {
-    console.error('MongoDB Error:', error.message)
+    console.error('❌ MongoDB Error:', error.message)
     return false
   }
 }
 
-// Connect on startup
-connectDB().catch(err => console.error('Initial connection failed:', err))
+// Connect to MongoDB
+await connectDB()
 
-// Health check FIRST (before routes that might fail)
+// Import passport config (optional)
+try {
+  await import('./config/passport.js')
+} catch (err) {
+  console.log('Passport not loaded')
+}
+
+// Import ALL routes - MUST be at top level await
+const authRoutes = (await import('./routes/auth.routes.js')).default
+const propertyRoutes = (await import('./routes/property.routes.js')).default
+const postRoutes = (await import('./routes/post.routes.js')).default
+const userRoutes = (await import('./routes/user.routes.js')).default
+const serviceRoutes = (await import('./routes/service.routes.js')).default
+const bookingRoutes = (await import('./routes/booking.routes.js')).default
+const dashboardRoutes = (await import('./routes/dashboard.routes.js')).default
+const uploadRoutes = (await import('./routes/upload.routes.js')).default
+
+console.log('✅ All routes imported')
+
+// Health check routes
 app.get('/', (req, res) => {
   res.json({ 
     success: true, 
-    message: 'API Running',
-    mongodb: isConnected ? 'Connected' : 'Disconnected'
+    message: 'Campus Egypt API Running',
+    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
   })
 })
 
-app.get('/api/test-db', async (req, res) => {
-  try {
-    await connectDB()
-    const state = mongoose.connection.readyState
-    const status = {
-      0: 'Disconnected',
-      1: 'Connected',
-      2: 'Connecting',
-      3: 'Disconnecting'
-    }
-    
-    res.json({
-      success: true,
-      mongodb: status[state],
-      readyState: state,
-      host: mongoose.connection.host || 'N/A',
-      name: mongoose.connection.name || 'N/A'
-    })
-  } catch (error) {
-    res.json({
-      success: false,
-      error: error.message,
-      mongodb: 'Failed to connect'
-    })
-  }
-})
-app.get('/api/health', async (req, res) => {
-  // Check actual connection state
-  await connectDB()
-  
-  const dbStatus = mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
-  
+app.get('/api/health', (req, res) => {
   res.json({ 
     success: true, 
     status: 'OK',
-    mongodb: dbStatus,
-    readyState: mongoose.connection.readyState
+    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
   })
 })
 
-// Debug endpoint - shows exact error
-app.get('/api/debug-mongo', async (req, res) => {
-  try {
-    const uri = process.env.MONGODB_URI
-    
-    if (!uri) {
-      return res.json({
-        success: false,
-        error: 'MONGODB_URI environment variable not found',
-        hasEnvVar: false
-      })
-    }
+// Use routes - IMPORTANT: Must be AFTER imports!
+app.use('/api/auth', authRoutes)
+app.use('/api/properties', propertyRoutes)
+app.use('/api/posts', postRoutes)
+app.use('/api/users', userRoutes)
+app.use('/api/services', serviceRoutes)
+app.use('/api/bookings', bookingRoutes)
+app.use('/api/dashboard', dashboardRoutes)
+app.use('/api/upload', uploadRoutes)
 
-    // Show masked URI
-    const maskedUri = uri.substring(0, 25) + '...' + uri.substring(uri.length - 20)
-    
-    // Try to connect
-    await mongoose.connect(uri, {
-      bufferCommands: false,
-      serverSelectionTimeoutMS: 5000
-    })
-
-    isConnected = true
-
-    res.json({
-      success: true,
-      hasEnvVar: true,
-      uriPreview: maskedUri,
-      readyState: mongoose.connection.readyState,
-      host: mongoose.connection.host,
-      database: mongoose.connection.name
-    })
-  } catch (error) {
-    res.json({
-      success: false,
-      error: error.message,
-      hasEnvVar: !!process.env.MONGODB_URI,
-      errorName: error.name
-    })
-  }
-})
-
-// Import routes with try-catch
-let routesLoaded = false
-
-async function loadRoutes() {
-  if (routesLoaded) return
-
-  try {
-    // Import passport config (optional)
-    try {
-      await import('./config/passport.js')
-      console.log('Passport loaded')
-    } catch (err) {
-      console.log('Passport not loaded:', err.message)
-    }
-
-    // Import routes
-    const authModule = await import('./routes/auth.routes.js')
-    const propertyModule = await import('./routes/property.routes.js')
-    const postModule = await import('./routes/post.routes.js')
-    const userModule = await import('./routes/user.routes.js')
-    const serviceModule = await import('./routes/service.routes.js')
-    const bookingModule = await import('./routes/booking.routes.js')
-    const dashboardModule = await import('./routes/dashboard.routes.js')
-    const uploadModule = await import('./routes/upload.routes.js')
-
-    // Use routes
-    app.use('/api/auth', authModule.default)
-    app.use('/api/properties', propertyModule.default)
-    app.use('/api/posts', postModule.default)
-    app.use('/api/users', userModule.default)
-    app.use('/api/services', serviceModule.default)
-    app.use('/api/bookings', bookingModule.default)
-    app.use('/api/dashboard', dashboardModule.default)
-    app.use('/api/upload', uploadModule.default)
-
-    routesLoaded = true
-    console.log('Routes loaded')
-  } catch (err) {
-    console.error('Route loading error:', err.message)
-    // Don't throw - app will still work for health checks
-  }
-}
-
-// Load routes
-loadRoutes().catch(err => console.error('Failed to load routes:', err))
+console.log('✅ All routes registered')
 
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ 
     success: false, 
-    message: 'Route not found' 
+    message: 'Route not found',
+    path: req.path
   })
 })
 
