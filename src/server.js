@@ -13,19 +13,19 @@ const app = express()
 // Compression middleware for faster responses
 app.use(compression())
 
-// Middleware
+// CORS Configuration
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'https://campus-egypt-nextjs.vercel.app', // Your Vercel frontend
-    'https://student-housing-backend.vercel.app' // Your Vercel backend
+    'https://campus-egypt-nextjs.vercel.app',
+    'https://campus-home-client-v2.vercel.app'
   ],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }))
 
-// Increase payload limit but add timeout
+// Body parsers
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser())
@@ -33,78 +33,65 @@ app.use(passport.initialize())
 
 // Request timeout middleware
 app.use((req, res, next) => {
-  req.setTimeout(30000) // 30 seconds
+  req.setTimeout(30000)
   res.setTimeout(30000)
   next()
 })
 
-// MongoDB Connection with ENHANCED RETRY LOGIC
+// MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI
 
 if (!MONGODB_URI) {
   console.error('❌ MONGODB_URI is not defined in .env file')
-  process.exit(1)
+  if (process.env.VERCEL !== '1') {
+    process.exit(1)
+  }
 }
 
 console.log('🔗 Connecting to MongoDB...')
-console.log('📍 URI:', MONGODB_URI.substring(0, 30) + '...')
-
 mongoose.set('strictQuery', false)
 
-// Enhanced connection function with retry logic
 let isConnected = false
 
-const connectDB = async (retries = 5) => {
+const connectDB = async () => {
   if (isConnected) {
     console.log('✅ Using existing MongoDB connection')
     return
   }
 
-  for (let i = 1; i <= retries; i++) {
-    try {
-      console.log(`🔄 Connection attempt ${i}/${retries}...`)
-      
-      await mongoose.connect(MONGODB_URI, {
-        serverSelectionTimeoutMS: 30000, // Increased to 30 seconds
-        socketTimeoutMS: 75000, // Increased to 75 seconds
-        connectTimeoutMS: 30000, // Increased to 30 seconds
-        maxPoolSize: 50,
-        minPoolSize: 10,
-        maxIdleTimeMS: 60000, // Increased to 60 seconds
-        retryWrites: true,
-        w: 'majority',
-        family: 4,
-        compressors: ['zlib']
-      })
-      
-      isConnected = true
-      console.log('✅ MongoDB Connected Successfully')
-      console.log('📊 Database:', mongoose.connection.name)
-      console.log('🌐 Host:', mongoose.connection.host)
-      return
+  try {
+    console.log('🔄 Attempting MongoDB connection...')
+    
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 30000,
+      socketTimeoutMS: 75000,
+      connectTimeoutMS: 30000,
+      maxPoolSize: 50,
+      minPoolSize: 10,
+      maxIdleTimeMS: 60000,
+      retryWrites: true,
+      w: 'majority',
+      family: 4,
+      compressors: ['zlib']
+    })
+    
+    isConnected = true
+    console.log('✅ MongoDB Connected Successfully')
+    console.log('📊 Database:', mongoose.connection.name)
+    console.log('🌐 Host:', mongoose.connection.host)
 
-    } catch (error) {
-      console.error(`❌ Connection attempt ${i} failed:`, error.message)
-      
-      if (i === retries) {
-        console.error('❌ All connection attempts failed')
-        console.error('Full error:', error)
-        
-        // Don't exit in production, keep trying
-        if (process.env.NODE_ENV !== 'production') {
-          process.exit(1)
-        }
-      } else {
-        // Wait before retrying (exponential backoff)
-        const waitTime = Math.min(1000 * Math.pow(2, i), 10000)
-        console.log(`⏳ Waiting ${waitTime}ms before retry...`)
-        await new Promise(resolve => setTimeout(resolve, waitTime))
-      }
+  } catch (error) {
+    console.error('❌ MongoDB Connection Error:', error.message)
+    isConnected = false
+    
+    // Don't crash in production, just log
+    if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'production') {
+      process.exit(1)
     }
   }
 }
 
-// Handle connection events
+// Connection event handlers
 mongoose.connection.on('connected', () => {
   isConnected = true
   console.log('✅ Mongoose connected to MongoDB')
@@ -118,31 +105,18 @@ mongoose.connection.on('error', (err) => {
 mongoose.connection.on('disconnected', () => {
   console.log('⚠️ Mongoose disconnected')
   isConnected = false
-  
-  // Try to reconnect after 5 seconds
-  setTimeout(() => {
-    console.log('🔄 Attempting to reconnect...')
-    connectDB()
-  }, 5000)
-})
-
-// Graceful shutdown
-process.on('SIGINT', async () => {
-  try {
-    await mongoose.connection.close()
-    console.log('MongoDB connection closed through app termination')
-    process.exit(0)
-  } catch (err) {
-    console.error('Error closing MongoDB connection:', err)
-    process.exit(1)
-  }
 })
 
 // Connect to database
 await connectDB()
 
 // Import config AFTER connection
-import './config/passport.js'
+try {
+  await import('./config/passport.js')
+  console.log('✅ Passport config loaded')
+} catch (err) {
+  console.error('⚠️ Passport config not loaded:', err.message)
+}
 
 // Import routes AFTER connection
 import authRoutes from './routes/auth.routes.js'
@@ -156,9 +130,10 @@ import uploadRoutes from './routes/upload.routes.js'
 
 console.log('✅ All routes loaded')
 
-// Routes
+// Health check routes
 app.get('/', (req, res) => {
   res.json({ 
+    success: true,
     message: 'Campus Egypt API',
     status: 'running',
     mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
@@ -176,6 +151,7 @@ app.get('/api/health', (req, res) => {
   }
 
   res.json({ 
+    success: true,
     status: dbState === 1 ? 'OK' : 'WARNING',
     mongodb: dbStatus[dbState] || 'Unknown',
     database: mongoose.connection.name || 'N/A',
@@ -185,6 +161,7 @@ app.get('/api/health', (req, res) => {
   })
 })
 
+// API Routes
 app.use('/api/auth', authRoutes)
 app.use('/api/properties', propertyRoutes)
 app.use('/api/posts', postRoutes)
@@ -194,7 +171,7 @@ app.use('/api/bookings', bookingRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/upload', uploadRoutes)
 
-// 404 handler
+// 404 handler - Return JSON
 app.use((req, res) => {
   res.status(404).json({ 
     success: false,
@@ -203,13 +180,15 @@ app.use((req, res) => {
   })
 })
 
-// Error handler
+// Error handler - Always return JSON
 app.use((err, req, res, next) => {
   console.error('❌ Error:', err)
-  res.status(500).json({ 
+  
+  // Always return JSON response
+  res.status(err.status || 500).json({ 
     success: false,
-    message: 'Server error', 
-    error: process.env.NODE_ENV === 'development' ? err.message : 'Internal server error'
+    message: err.message || 'Server error',
+    error: process.env.NODE_ENV === 'development' ? err.stack : undefined
   })
 })
 
