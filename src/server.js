@@ -17,8 +17,7 @@ app.use(compression())
 app.use(cors({
   origin: [
     'http://localhost:3000',
-    'https://campus-egypt-nextjs.vercel.app',
-    'https://campus-home-client-v2.vercel.app'
+    'https://campus-egypt-nextjs.vercel.app'
   ],
   credentials: true
 }))
