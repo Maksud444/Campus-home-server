@@ -22,14 +22,12 @@ app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser())
 
-// MongoDB Connection
 const MONGODB_URI = process.env.MONGODB_URI || ''
 
-let isConnected = false
-
 async function connectDB() {
-  if (isConnected) {
-    return
+  // Check if already connected
+  if (mongoose.connection.readyState === 1) {
+    return true
   }
 
   try {
@@ -42,16 +40,16 @@ async function connectDB() {
       serverSelectionTimeoutMS: 5000
     })
     
-    isConnected = true
     console.log('MongoDB Connected')
+    return true
   } catch (error) {
     console.error('MongoDB Error:', error.message)
-    // Don't throw - continue without DB for health check
+    return false
   }
 }
 
-// Connect
-connectDB().catch(err => console.error('Initial DB connection failed:', err))
+// Connect on startup
+connectDB().catch(err => console.error('Initial connection failed:', err))
 
 // Health check FIRST (before routes that might fail)
 app.get('/', (req, res) => {
@@ -88,11 +86,17 @@ app.get('/api/test-db', async (req, res) => {
     })
   }
 })
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  // Check actual connection state
+  await connectDB()
+  
+  const dbStatus = mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+  
   res.json({ 
     success: true, 
     status: 'OK',
-    mongodb: isConnected ? 'Connected' : 'Disconnected'
+    mongodb: dbStatus,
+    readyState: mongoose.connection.readyState
   })
 })
 
