@@ -23,22 +23,31 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 app.use(cookieParser())
 app.use(passport.initialize())
 
-// MongoDB - CRITICAL FIX
-let db = null
+// MongoDB Connection - FIXED FOR VERCEL
+const MONGODB_URI = process.env.MONGODB_URI
+
+let cachedDb = null
 
 async function connectDB() {
-  if (db) return db
-  
-  db = await mongoose.connect(process.env.MONGODB_URI, {
+  if (cachedDb && mongoose.connection.readyState === 1) {
+    return cachedDb
+  }
+
+  const db = await mongoose.connect(MONGODB_URI, {
     bufferCommands: false,
   })
   
+  cachedDb = db
   return db
 }
 
+// Connect on startup
 await connectDB()
 
-// Import routes
+try {
+  await import('./config/passport.js')
+} catch (err) {}
+
 import authRoutes from './routes/auth.routes.js'
 import propertyRoutes from './routes/property.routes.js'
 import postRoutes from './routes/post.routes.js'
@@ -48,9 +57,19 @@ import bookingRoutes from './routes/booking.routes.js'
 import dashboardRoutes from './routes/dashboard.routes.js'
 import uploadRoutes from './routes/upload.routes.js'
 
-// Routes
-app.get('/', (req, res) => res.json({ success: true, message: 'API Running' }))
-app.get('/api/health', (req, res) => res.json({ success: true, status: 'OK' }))
+// Reconnect before each request
+app.use(async (req, res, next) => {
+  await connectDB()
+  next()
+})
+
+app.get('/', (req, res) => {
+  res.json({ success: true, message: 'Campus Egypt API' })
+})
+
+app.get('/api/health', (req, res) => {
+  res.json({ success: true, status: 'OK', mongodb: 'Connected' })
+})
 
 app.use('/api/auth', authRoutes)
 app.use('/api/properties', propertyRoutes)
@@ -61,7 +80,12 @@ app.use('/api/bookings', bookingRoutes)
 app.use('/api/dashboard', dashboardRoutes)
 app.use('/api/upload', uploadRoutes)
 
-app.use((req, res) => res.status(404).json({ success: false, message: 'Not found' }))
-app.use((err, req, res, next) => res.status(500).json({ success: false, message: err.message }))
+app.use((req, res) => {
+  res.status(404).json({ success: false, message: 'Route not found' })
+})
+
+app.use((err, req, res, next) => {
+  res.status(500).json({ success: false, message: err.message })
+})
 
 export default app
