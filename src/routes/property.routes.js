@@ -11,6 +11,8 @@ router.post('/', async (req, res) => {
   try {
     console.log('📥 Create property request')
     console.log('📦 Body:', JSON.stringify(req.body, null, 2))
+    console.log('💰 Raw price from frontend:', req.body.price, 'Type:', typeof req.body.price)
+
 
     const {
       title,
@@ -111,7 +113,7 @@ router.post('/', async (req, res) => {
       title: title.trim(),
       description: description.trim(),
       type: type || 'property',
-      price: price ? parseFloat(price) : null,
+      price: price !== null && price !== undefined && price !== '' ? Number(price) : null,
       location: {
         city: location.city,
         area: location.area,
@@ -152,6 +154,11 @@ router.post('/', async (req, res) => {
     }
 
     console.log('📝 Creating property:', propertyData.title)
+
+    console.log('📝 Creating property:', propertyData.title)
+    
+    // ADD THIS NEW LINE:
+    console.log('💰 Final price value:', propertyData.price, 'Type:', typeof propertyData.price)
 
     const property = await Property.create(propertyData)
 
