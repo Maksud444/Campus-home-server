@@ -1,5 +1,6 @@
 import express from 'express'
 import Property from '../models/Property.model.js'
+import User from '../models/User.model.js'
 
 const router = express.Router()
 
@@ -8,68 +9,168 @@ const router = express.Router()
 // ==================
 router.post('/', async (req, res) => {
   try {
+    console.log('📥 Create property request')
+    console.log('📦 Body:', JSON.stringify(req.body, null, 2))
+
     const {
       title,
       description,
+      type,
       price,
       location,
       propertyType,
       bedrooms,
       bathrooms,
       area,
+      furnished,
       images,
+      videos,
       amenities,
-      whatsapp,
-      contactPhone,
-      contactEmail,
-      userId
-    } = req.body
-
-    // Validate WhatsApp number
-    if (whatsapp && whatsapp.number) {
-      if (whatsapp.number.length > 11) {
-        return res.status(400).json({
-          success: false,
-          message: 'WhatsApp number cannot be more than 11 digits'
-        })
-      }
-      if (!/^\d{10,11}$/.test(whatsapp.number)) {
-        return res.status(400).json({
-          success: false,
-          message: 'WhatsApp number must be 10-11 digits only'
-        })
-      }
-    }
-
-    const property = await Property.create({
-      title,
-      description,
-      price,
-      location,
-      propertyType,
-      bedrooms,
-      bathrooms,
-      area,
-      images,
-      amenities,
+      preferences,
+      targetAudience,
       whatsapp,
       contactPhone,
       contactEmail,
       userId,
-      status: 'available'
-    })
+      userName,
+      userEmail,
+      userImage,
+      userRole
+    } = req.body
+
+    // Validation
+    if (!title || !title.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title is required'
+      })
+    }
+
+    if (!description || !description.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Description is required'
+      })
+    }
+
+    if (!location || !location.city) {
+      return res.status(400).json({
+        success: false,
+        message: 'City is required'
+      })
+    }
+
+    if (!location.area) {
+      return res.status(400).json({
+        success: false,
+        message: 'Area is required'
+      })
+    }
+
+    if (!whatsapp || !whatsapp.number) {
+      return res.status(400).json({
+        success: false,
+        message: 'WhatsApp number is required'
+      })
+    }
+
+    // Validate WhatsApp number
+    if (whatsapp.number.length < 10 || whatsapp.number.length > 11) {
+      return res.status(400).json({
+        success: false,
+        message: 'WhatsApp number must be 10-11 digits'
+      })
+    }
+
+    if (!/^\d{10,11}$/.test(whatsapp.number)) {
+      return res.status(400).json({
+        success: false,
+        message: 'WhatsApp number must contain only digits'
+      })
+    }
+
+    if (!images || images.length < 3) {
+      return res.status(400).json({
+        success: false,
+        message: 'At least 3 images are required'
+      })
+    }
+
+    // Find user if userId provided
+    let user = null
+    if (userId) {
+      try {
+        user = await User.findById(userId)
+      } catch (err) {
+        console.log('⚠️ Invalid userId format:', userId)
+      }
+    }
+
+    // Create property
+    const propertyData = {
+      title: title.trim(),
+      description: description.trim(),
+      type: type || 'property',
+      price: price ? parseFloat(price) : null,
+      location: {
+        city: location.city,
+        area: location.area,
+        address: location.address || ''
+      },
+      propertyType: propertyType || 'apartment',
+      bedrooms: bedrooms ? parseInt(bedrooms) : null,
+      bathrooms: bathrooms ? parseInt(bathrooms) : null,
+      area: area ? parseFloat(area) : null,
+      furnished: furnished === true || furnished === 'true',
+      images: images || [],
+      videos: videos || [],
+      amenities: amenities || [],
+      preferences: preferences || '',
+      targetAudience: targetAudience || 'students',
+      whatsapp: {
+        countryCode: whatsapp.countryCode || '+20',
+        number: whatsapp.number
+      },
+      contactPhone: contactPhone || '',
+      contactEmail: contactEmail || '',
+      status: 'active'
+    }
+
+    // Add user info
+    if (user) {
+      propertyData.userId = user._id
+      propertyData.userName = user.name
+      propertyData.userEmail = user.email
+      propertyData.userImage = user.avatar || ''
+      propertyData.userRole = user.role
+    } else {
+      // Use provided user info
+      propertyData.userName = userName || 'Anonymous'
+      propertyData.userEmail = userEmail || ''
+      propertyData.userImage = userImage || ''
+      propertyData.userRole = userRole || 'student'
+    }
+
+    console.log('📝 Creating property:', propertyData.title)
+
+    const property = await Property.create(propertyData)
+
+    console.log('✅ Property created:', property._id)
 
     res.status(201).json({
       success: true,
       message: 'Property created successfully',
       property
     })
+
   } catch (error) {
     console.error('❌ Create property error:', error)
+    console.error('Error stack:', error.stack)
+    
     res.status(500).json({
       success: false,
-      message: 'Failed to create property',
-      error: error.message
+      message: error.message || 'Failed to create property',
+      error: process.env.NODE_ENV === 'development' ? error.stack : undefined
     })
   }
 })

@@ -10,30 +10,61 @@ const propertySchema = new mongoose.Schema({
     type: String,
     required: true
   },
-  price: {
-    type: Number,
-    required: true
+  
+  // Post Type (property, roommate, room)
+  type: {
+    type: String,
+    enum: ['property', 'roommate', 'room'],
+    default: 'property'
   },
+  
+  price: {
+    type: Number
+  },
+  
   location: {
-    city: String,
-    area: String,
+    city: {
+      type: String,
+      required: true
+    },
+    area: {
+      type: String,
+      required: true
+    },
     address: String
   },
+  
   propertyType: {
     type: String,
     enum: ['apartment', 'studio', 'villa', 'room', 'house'],
-    required: true
+    default: 'apartment'
   },
+  
   bedrooms: Number,
   bathrooms: Number,
-  area: Number, // in square meters
+  area: Number,
+  
+  furnished: {
+    type: Boolean,
+    default: false
+  },
   
   images: [{
     url: String,
     public_id: String
   }],
   
+  videos: [String],
+  
   amenities: [String],
+  
+  preferences: String,
+  
+  targetAudience: {
+    type: String,
+    enum: ['students', 'family', 'all'],
+    default: 'students'
+  },
   
   // Contact Information
   whatsapp: {
@@ -60,15 +91,24 @@ const propertySchema = new mongoose.Schema({
   // User reference
   userId: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'User'
+  },
+  
+  // User info (for when userId is not available)
+  userName: String,
+  userEmail: String,
+  userImage: String,
+  userRole: {
+    type: String,
+    enum: ['student', 'agent', 'owner', 'service-provider'],
+    default: 'student'
   },
   
   // Property status
   status: {
     type: String,
-    enum: ['available', 'rented', 'not-available', 'deleted'],
-    default: 'available'
+    enum: ['available', 'rented', 'not-available', 'active', 'inactive'],
+    default: 'active'
   },
   
   // Soft delete fields
@@ -76,26 +116,21 @@ const propertySchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  deletedAt: {
-    type: Date,
-    default: null
-  },
-  permanentDeleteAt: {
-    type: Date,
-    default: null
-  },
+  deletedAt: Date,
+  permanentDeleteAt: Date,
   
   // Stats
   views: {
     type: Number,
     default: 0
   },
-  likes: [{
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User'
-  }],
   
   featured: {
+    type: Boolean,
+    default: false
+  },
+  
+  verified: {
     type: Boolean,
     default: false
   }
@@ -103,37 +138,38 @@ const propertySchema = new mongoose.Schema({
   timestamps: true
 })
 
-// Compound indexes only (removed duplicates)
+// Indexes
 propertySchema.index({ userId: 1, createdAt: -1 })
 propertySchema.index({ status: 1, isDeleted: 1 })
-propertySchema.index({ isDeleted: 1, permanentDeleteAt: 1 })
+propertySchema.index({ 'location.city': 1 })
+propertySchema.index({ type: 1 })
 
-// Method to soft delete
+// Soft delete method
 propertySchema.methods.softDelete = function() {
   this.isDeleted = true
   this.status = 'not-available'
   this.deletedAt = new Date()
-  this.permanentDeleteAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000) // 2 days from now
+  this.permanentDeleteAt = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000)
   return this.save()
 }
 
-// Method to restore
+// Restore method
 propertySchema.methods.restore = function() {
   this.isDeleted = false
-  this.status = 'available'
+  this.status = 'active'
   this.deletedAt = null
   this.permanentDeleteAt = null
   return this.save()
 }
 
-// Static method to clean up permanently deleted properties
+// Cleanup method
 propertySchema.statics.cleanupDeleted = async function() {
   const now = new Date()
   const result = await this.deleteMany({
     isDeleted: true,
     permanentDeleteAt: { $lte: now }
   })
-  console.log(`🗑️ Cleaned up ${result.deletedCount} permanently deleted properties`)
+  console.log(`🗑️ Cleaned up ${result.deletedCount} properties`)
   return result
 }
 
