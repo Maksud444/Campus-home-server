@@ -130,51 +130,83 @@ router.post('/login', async (req, res) => {
   }
 })
 
-// OAuth (Google/Facebook)
+// OAuth (Google/Facebook) - UPDATED VERSION
 router.post('/oauth', async (req, res) => {
   try {
+    console.log('📥 OAuth request received:', req.body)
+    
     const { email, name, image, provider } = req.body
 
+    if (!email) {
+      console.error('❌ No email provided')
+      return res.status(400).json({
+        success: false,
+        message: 'Email is required'
+      })
+    }
+
+    // Find or create user
     let user = await User.findOne({ email: email.toLowerCase() })
 
     if (!user) {
-      // Create new user
+      // Create new user via OAuth
+      console.log('🆕 Creating new OAuth user:', email)
+      
       user = await User.create({
-        name,
+        name: name || email.split('@')[0],
         email: email.toLowerCase(),
-        avatar: image,
+        avatar: image || '',
         provider: provider || 'google',
-        verified: true
+        role: 'student',
+        verified: true,
+        // Random password (won't be used for OAuth accounts)
+        password: await bcrypt.hash(Math.random().toString(36).slice(-8), 10)
       })
+      
+      console.log('✅ New user created via OAuth')
     } else {
-      // Update existing user
-      user.name = name
-      user.avatar = image
+      // Update existing user's info
+      console.log('✅ Existing user found, updating:', email)
+      
+      if (name) user.name = name
+      if (image) user.avatar = image
+      if (provider && !user.provider) user.provider = provider
+      
       await user.save()
     }
 
+    // Generate JWT token
     const token = jwt.sign(
       { id: user._id, email: user.email, role: user.role },
       process.env.JWT_SECRET,
-      { expiresIn: '7d' }
+      { expiresIn: '30d' }
     )
 
+    console.log('✅ OAuth successful for:', user.email)
+
+    // Return consistent user object format
     res.json({
       success: true,
       user: {
-        id: user._id,
-        name: user.name,
+        _id: user._id,
+        id: user._id.toString(),
         email: user.email,
+        name: user.name,
         role: user.role,
-        avatar: user.avatar
+        avatar: user.avatar,
+        phone: user.phone || '',
+        location: user.location || '',
+        university: user.university || '',
+        bio: user.bio || ''
       },
       token
     })
+
   } catch (error) {
-    console.error('OAuth error:', error)
+    console.error('❌ OAuth error:', error)
     res.status(500).json({
       success: false,
-      message: 'OAuth failed',
+      message: error.message || 'OAuth authentication failed',
       error: error.message
     })
   }
