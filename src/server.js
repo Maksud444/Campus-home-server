@@ -1,115 +1,170 @@
-import express from 'express'
-import mongoose from 'mongoose'
-import cors from 'cors'
-import dotenv from 'dotenv'
-import cookieParser from 'cookie-parser'
-import compression from 'compression'
+// src/index.js  (or server.js) — ESM style
+import express from 'express';
+import mongoose from 'mongoose';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import cookieParser from 'cookie-parser';
+import compression from 'compression';
 
-dotenv.config()
+// Routes (top-level imports — assuming ESM and .js extension)
+import authRoutes from './routes/auth.routes.js';
+import propertyRoutes from './routes/property.routes.js';
+import postRoutes from './routes/post.routes.js';
+import userRoutes from './routes/user.routes.js';
+import serviceRoutes from './routes/service.routes.js';
+import bookingRoutes from './routes/booking.routes.js';
+import dashboardRoutes from './routes/dashboard.routes.js';
+import uploadRoutes from './routes/upload.routes.js';
 
-const app = express()
+dotenv.config();
 
-// Middleware
-app.use(compression())
-app.use(cors({
-  origin: [
-    'http://localhost:3000',
-    'https://campus-egypt-nextjs.vercel.app'
-  ],
-  credentials: true
-}))
-app.use(express.json({ limit: '10mb' }))
-app.use(express.urlencoded({ extended: true, limit: '10mb' }))
-app.use(cookieParser())
+const app = express();
 
-// MongoDB Connection
-const MONGODB_URI = process.env.MONGODB_URI || ''
+// ────────────────────────────────────────────────
+// Environment Validation
+// ────────────────────────────────────────────────
+const MONGODB_URI = process.env.MONGODB_URI;
 
-async function connectDB() {
-  if (mongoose.connection.readyState === 1) {
-    return true
+if (!MONGODB_URI) {
+  console.error('❌ CRITICAL: MONGODB_URI is not defined in .env');
+  process.exit(1);
+}
+
+// ────────────────────────────────────────────────
+// MongoDB Connection (Lazy + Cached)
+// ────────────────────────────────────────────────
+let isDBConnected = false;
+
+async function ensureDBConnected() {
+  if (isDBConnected || mongoose.connection.readyState === 1) {
+    return;
   }
 
   try {
     await mongoose.connect(MONGODB_URI, {
       bufferCommands: false,
-      serverSelectionTimeoutMS: 5000
-    })
-    console.log('✅ MongoDB Connected')
-    return true
+      serverSelectionTimeoutMS: 5000,
+      // Optional: family: 4,  // Force IPv4 if you have DNS issues
+      // maxPoolSize: 10,      // Tune based on traffic
+    });
+
+    isDBConnected = true;
+    console.log('✅ MongoDB Connected Successfully');
   } catch (error) {
-    console.error('❌ MongoDB Error:', error.message)
-    return false
+    console.error('❌ MongoDB Connection Failed:', error.message);
+    throw error; // Let middleware catch it
   }
 }
 
-// Connect to MongoDB
-await connectDB()
+// Global DB connection middleware
+app.use(async (req, res, next) => {
+  try {
+    await ensureDBConnected();
+    next();
+  } catch (err) {
+    console.error('DB Connection Error in request:', err);
+    return res.status(503).json({
+      success: false,
+      message: 'Service temporarily unavailable (database issue)',
+    });
+  }
+});
 
-// Import passport config (optional)
-try {
-  await import('./config/passport.js')
-} catch (err) {
-  console.log('Passport not loaded')
-}
-
-// Import ALL routes - MUST be at top level await
-const authRoutes = (await import('./routes/auth.routes.js')).default
-const propertyRoutes = (await import('./routes/property.routes.js')).default
-const postRoutes = (await import('./routes/post.routes.js')).default
-const userRoutes = (await import('./routes/user.routes.js')).default
-const serviceRoutes = (await import('./routes/service.routes.js')).default
-const bookingRoutes = (await import('./routes/booking.routes.js')).default
-const dashboardRoutes = (await import('./routes/dashboard.routes.js')).default
-const uploadRoutes = (await import('./routes/upload.routes.js')).default
-
-console.log('✅ All routes imported')
-
-// Health check routes
-app.get('/', (req, res) => {
-  res.json({ 
-    success: true, 
-    message: 'Campus Egypt API Running',
-    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
+// ────────────────────────────────────────────────
+// Middleware
+// ────────────────────────────────────────────────
+app.use(compression());
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Allow localhost + production + all Vercel preview URLs
+      if (
+        !origin ||
+        origin === 'http://localhost:3000' ||
+        origin === 'https://campus-egypt-nextjs.vercel.app' ||
+        origin.endsWith('.vercel.app')
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
+    credentials: true,
   })
-})
+);
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(cookieParser());
+
+// Optional: Passport (if you're using it)
+// try {
+//   const passport = (await import('./config/passport.js')).default;
+//   app.use(passport.initialize());
+//   console.log('Passport initialized');
+// } catch (err) {
+//   console.log('Passport config not loaded (optional)');
+// }
+
+// ────────────────────────────────────────────────
+// Routes
+// ────────────────────────────────────────────────
+app.use('/api/auth', authRoutes);
+app.use('/api/properties', propertyRoutes);
+app.use('/api/posts', postRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/services', serviceRoutes);
+app.use('/api/bookings', bookingRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/upload', uploadRoutes);
+
+// Health & Root checks
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Campus Egypt API is running',
+    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    env: process.env.NODE_ENV || 'development',
+  });
+});
 
 app.get('/api/health', (req, res) => {
-  res.json({ 
-    success: true, 
+  res.json({
+    success: true,
     status: 'OK',
-    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected'
-  })
-})
+    mongodb: mongoose.connection.readyState === 1 ? 'Connected' : 'Disconnected',
+    uptime: process.uptime(),
+  });
+});
 
-// Use routes - IMPORTANT: Must be AFTER imports!
-app.use('/api/auth', authRoutes)
-app.use('/api/properties', propertyRoutes)
-app.use('/api/posts', postRoutes)
-app.use('/api/users', userRoutes)
-app.use('/api/services', serviceRoutes)
-app.use('/api/bookings', bookingRoutes)
-app.use('/api/dashboard', dashboardRoutes)
-app.use('/api/upload', uploadRoutes)
-
-console.log('✅ All routes registered')
-
-// 404 handler
+// ────────────────────────────────────────────────
+// 404 & Global Error Handler
+// ────────────────────────────────────────────────
 app.use((req, res) => {
-  res.status(404).json({ 
-    success: false, 
+  res.status(404).json({
+    success: false,
     message: 'Route not found',
-    path: req.path
-  })
-})
+    path: req.originalUrl,
+  });
+});
 
-// Error handler
 app.use((err, req, res, next) => {
-  console.error('Error:', err.message)
-  res.status(500).json({ 
-    success: false, 
-    message: err.message 
-  })
-})
+  console.error('Server Error:', err.stack || err.message);
+  const status = err.status || 500;
+  res.status(status).json({
+    success: false,
+    message: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
+    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack }),
+  });
+});
 
-export default app
+// ────────────────────────────────────────────────
+// Start server (only if this file is run directly)
+// ────────────────────────────────────────────────
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const PORT = process.env.PORT || 5000;
+  app.listen(PORT, () => {
+    console.log(`🚀 Server running on port ${PORT} | Env: ${process.env.NODE_ENV || 'development'}`);
+  });
+}
+
+export default app;
