@@ -82,6 +82,7 @@ app.use(
         !origin ||
         origin === 'http://localhost:3000' ||
         origin === 'https://campus-egypt-nextjs.vercel.app' ||
+        origin === 'http://iok84cw4ko80gosk4kgk08sk.72.61.109.19.sslip.io'||
         origin.endsWith('.vercel.app')
       ) {
         callback(null, true);
