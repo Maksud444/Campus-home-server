@@ -142,10 +142,10 @@ export const login = async (req, res) => {
     }
 
     // Check if user used social login
-    if (user.authProvider !== 'local') {
+    if (user.provider && user.provider !== 'local') {
       return res.status(401).json({
         success: false,
-        message: `Please login with ${user.authProvider}`
+        message: `Please login with ${user.provider}`
       });
     }
 

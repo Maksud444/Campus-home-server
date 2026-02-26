@@ -1,4 +1,5 @@
 import mongoose from 'mongoose'
+import bcrypt from 'bcryptjs'
 
 const userSchema = new mongoose.Schema({
   name: {
@@ -52,6 +53,14 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  isBanned: {
+    type: Boolean,
+    default: false
+  },
+  banReason: {
+    type: String,
+    default: ''
+  },
   resetPasswordToken: String,
   resetPasswordExpire: Date,
   savedProperties: [{
@@ -68,5 +77,10 @@ const userSchema = new mongoose.Schema({
 
 // Compound index only (email index already created by unique: true)
 userSchema.index({ email: 1, role: 1 })
+
+// Compare entered password with stored bcrypt hash
+userSchema.methods.comparePassword = async function (enteredPassword) {
+  return bcrypt.compare(enteredPassword, this.password)
+}
 
 export default mongoose.model('User', userSchema)

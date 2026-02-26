@@ -68,9 +68,18 @@ const postSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['active', 'inactive', 'deleted'],
-    default: 'active'
-  }
+    enum: ['pending', 'active', 'inactive', 'rejected', 'deleted'],
+    default: 'pending'
+  },
+  adminNote: {
+    type: String,
+    default: ''
+  },
+  approvedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
+  },
+  approvedAt: Date
 }, {
   timestamps: true
 });

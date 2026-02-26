@@ -15,6 +15,7 @@ import serviceRoutes from './routes/service.routes.js';
 import bookingRoutes from './routes/booking.routes.js';
 import dashboardRoutes from './routes/dashboard.routes.js';
 import uploadRoutes from './routes/upload.routes.js';
+import adminRoutes from './routes/admin.routes.js';
 
 dotenv.config();
 
@@ -104,6 +105,8 @@ app.use('/api/services', serviceRoutes);
 app.use('/api/bookings', bookingRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/upload', uploadRoutes);
+const ADMIN_ROUTE = process.env.ADMIN_ROUTE_SECRET || 'admin'
+app.use(`/api/${ADMIN_ROUTE}`, adminRoutes);
 
 // Health & Root checks
 app.get('/', (req, res) => {
