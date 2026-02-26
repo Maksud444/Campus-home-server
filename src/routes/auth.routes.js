@@ -419,4 +419,48 @@ router.post('/reset-password', async (req, res) => {
   }
 })
 
+// TEMPORARY DEBUG - remove after diagnosing admin login issue
+router.get('/debug-login', async (req, res) => {
+  const results = {}
+  try {
+    // Step 1: check JWT_SECRET
+    results.jwt_secret_present = !!process.env.JWT_SECRET
+    results.jwt_secret_length = process.env.JWT_SECRET?.length || 0
+
+    // Step 2: try JWT signing
+    try {
+      const token = jwt.sign({ test: 1 }, process.env.JWT_SECRET, { expiresIn: '1m' })
+      results.jwt_sign_works = true
+      results.token_preview = token.substring(0, 20) + '...'
+    } catch (jwtErr) {
+      results.jwt_sign_works = false
+      results.jwt_error = jwtErr.message
+    }
+
+    // Step 3: check admin user in DB
+    const adminEmail = process.env.ADMIN_EMAIL || 'sysops.admin@campusedu.io'
+    const user = await User.findOne({ email: adminEmail.toLowerCase() }).select('+password')
+    results.admin_user_found = !!user
+    if (user) {
+      results.admin_role = user.role
+      results.admin_provider = user.provider
+      results.admin_has_password = !!user.password
+      results.admin_is_banned = user.isBanned
+
+      // Step 4: try password comparison
+      try {
+        const testPassword = process.env.ADMIN_PASSWORD || ''
+        const match = await bcrypt.compare(testPassword, user.password)
+        results.password_match = match
+      } catch (bcryptErr) {
+        results.bcrypt_error = bcryptErr.message
+      }
+    }
+
+    res.json({ success: true, debug: results })
+  } catch (err) {
+    res.json({ success: false, error: err.message, partial: results })
+  }
+})
+
 export default router
