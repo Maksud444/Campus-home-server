@@ -23,6 +23,9 @@ import {
   toggleFeaturedProperty,
   toggleVerifiedProperty,
   deleteProperty,
+  // Email marketing
+  broadcastEmail,
+  getEmailStats,
 } from '../controllers/admin.controller.js'
 
 const router = express.Router()
@@ -60,5 +63,9 @@ router.get('/properties', getAllProperties)
 router.put('/properties/:id/feature', toggleFeaturedProperty)
 router.put('/properties/:id/verify', toggleVerifiedProperty)
 router.delete('/properties/:id', deleteProperty)
+
+// ── Email Marketing ─────────────────────────────────
+router.get('/email/stats', getEmailStats)
+router.post('/email/broadcast', broadcastEmail)
 
 export default router

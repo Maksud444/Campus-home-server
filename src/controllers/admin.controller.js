@@ -3,7 +3,7 @@ import Property from '../models/Property.model.js'
 import Post from '../models/Post.model.js'
 import Booking from '../models/Booking.model.js'
 import Service from '../models/Service.model.js'
-import { sendPostApprovedEmail, sendPostRejectedEmail } from '../utils/email.service.js'
+import { sendPostApprovedEmail, sendPostRejectedEmail, sendNewListingEmail, sendMarketingEmail, sendBulkEmails } from '../utils/email.service.js'
 
 // ─────────────────────────────────────────────────
 // DASHBOARD STATS
@@ -495,23 +495,53 @@ export const approvePost = async (req, res) => {
     post.approvedAt = new Date()
     await post.save()
 
-    // Send email notification to post owner (non-blocking)
-    try {
-      const postOwner = await User.findOne({
-        $or: [{ _id: post.userId }, { email: post.userId }]
-      }).select('name email')
-      if (postOwner?.email) {
-        await sendPostApprovedEmail({
-          to: postOwner.email,
-          userName: postOwner.name || 'User',
-          postTitle: post.title || 'Your post',
-          postId: post._id,
-          adminNote: note,
+    // Non-blocking: send approval email + new listing notifications
+    ;(async () => {
+      try {
+        // 1. Notify post owner
+        const postOwner = await User.findOne({
+          $or: [{ _id: post.userId }, { email: post.userEmail }]
+        }).select('name email')
+        if (postOwner?.email) {
+          await sendPostApprovedEmail({
+            to: postOwner.email,
+            userName: postOwner.name || 'User',
+            postTitle: post.title || 'Your post',
+            postId: post._id,
+            adminNote: note,
+          })
+        }
+
+        // 2. Notify subscribed users whose prefs match this post
+        const subscriberQuery = {
+          'notificationPrefs.newListings': true,
+          email: { $ne: post.userEmail }, // don't notify the poster
+        }
+        if (post.type) subscriberQuery['notificationPrefs.types'] = { $in: [post.type, []] }
+        const subscribers = await User.find({
+          'notificationPrefs.newListings': true,
+          email: { $ne: post.userEmail },
+        }).select('name email notificationPrefs')
+
+        const matching = subscribers.filter(u => {
+          const prefs = u.notificationPrefs
+          const typeMatch = !prefs.types?.length || prefs.types.includes(post.type)
+          const locationMatch = !prefs.locations?.length ||
+            prefs.locations.some(loc =>
+              (post.city || '').toLowerCase().includes(loc.toLowerCase()) ||
+              (post.location || '').toLowerCase().includes(loc.toLowerCase())
+            )
+          const priceMatch = !prefs.maxPrice || !post.price || post.price <= prefs.maxPrice
+          return typeMatch && locationMatch && priceMatch
         })
+
+        await sendBulkEmails(matching, (user) =>
+          sendNewListingEmail({ to: user.email, userName: user.name || 'User', post })
+        )
+      } catch (emailErr) {
+        console.error('Email notifications failed (non-critical):', emailErr.message)
       }
-    } catch (emailErr) {
-      console.error('Email notification failed (non-critical):', emailErr.message)
-    }
+    })()
 
     res.json({
       success: true,
@@ -781,6 +811,77 @@ export const getPlatformStats = async (req, res) => {
     })
   } catch (error) {
     console.error('Platform stats error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
+// ─────────────────────────────────────────────────
+// EMAIL MARKETING
+// ─────────────────────────────────────────────────
+
+// @desc    Send marketing email to all users (or filtered)
+// @route   POST /api/admin/email/broadcast
+// @access  Private (Admin)
+export const broadcastEmail = async (req, res) => {
+  try {
+    const { subject, title, body, ctaText, ctaUrl, targetRole, onlySubscribed } = req.body
+
+    if (!subject || !title || !body) {
+      return res.status(400).json({ success: false, message: 'subject, title, and body are required' })
+    }
+
+    const filter = {}
+    if (targetRole && targetRole !== 'all') filter.role = targetRole
+    if (onlySubscribed) filter['notificationPrefs.newListings'] = true
+
+    const users = await User.find(filter).select('name email').lean()
+
+    if (!users.length) {
+      return res.status(404).json({ success: false, message: 'No users found for this target' })
+    }
+
+    // Respond immediately, send emails in background
+    res.json({
+      success: true,
+      message: `Sending email to ${users.length} users in background`,
+      data: { totalRecipients: users.length },
+    })
+
+    // Background send
+    sendBulkEmails(users, (user) =>
+      sendMarketingEmail({ to: user.email, userName: user.name, subject, title, body, ctaText, ctaUrl })
+    ).then(result => {
+      console.log(`✅ Broadcast email done: ${result.sent} sent, ${result.failed} failed`)
+    }).catch(err => {
+      console.error('Broadcast email error:', err.message)
+    })
+  } catch (error) {
+    console.error('Broadcast email error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
+// @desc    Get email stats (how many users subscribed, by role, etc.)
+// @route   GET /api/admin/email/stats
+// @access  Private (Admin)
+export const getEmailStats = async (req, res) => {
+  try {
+    const [totalUsers, subscribedUsers, byRole] = await Promise.all([
+      User.countDocuments(),
+      User.countDocuments({ 'notificationPrefs.newListings': true }),
+      User.aggregate([{ $group: { _id: '$role', count: { $sum: 1 } } }]),
+    ])
+
+    res.json({
+      success: true,
+      data: {
+        totalUsers,
+        subscribedToNewListings: subscribedUsers,
+        byRole: Object.fromEntries(byRole.map(r => [r._id, r.count])),
+      },
+    })
+  } catch (error) {
+    console.error('Email stats error:', error)
     res.status(500).json({ success: false, message: 'Server error' })
   }
 }

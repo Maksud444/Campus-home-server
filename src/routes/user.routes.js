@@ -119,4 +119,56 @@ router.put('/profile', async (req, res) => {
   }
 })
 
+// Update notification preferences
+// PUT /api/users/notifications  { email, newListings, locations, types, maxPrice }
+router.put('/notifications', async (req, res) => {
+  try {
+    const { email, newListings, locations, types, maxPrice } = req.body
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' })
+    }
+
+    const user = await User.findOne({ email: email.toLowerCase() })
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' })
+    }
+
+    user.notificationPrefs = {
+      newListings: newListings ?? user.notificationPrefs?.newListings ?? false,
+      locations: locations ?? user.notificationPrefs?.locations ?? [],
+      types: types ?? user.notificationPrefs?.types ?? [],
+      maxPrice: maxPrice ?? user.notificationPrefs?.maxPrice ?? 0,
+    }
+    await user.save()
+
+    res.json({
+      success: true,
+      message: 'Notification preferences updated',
+      data: user.notificationPrefs,
+    })
+  } catch (error) {
+    console.error('Update notifications error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+})
+
+// Get notification preferences
+// GET /api/users/notifications?email=...
+router.get('/notifications', async (req, res) => {
+  try {
+    const { email } = req.query
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' })
+    }
+    const user = await User.findOne({ email: email.toLowerCase() }).select('notificationPrefs').lean()
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' })
+    }
+    res.json({ success: true, data: user.notificationPrefs || {} })
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+})
+
 export default router

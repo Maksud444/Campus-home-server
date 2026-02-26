@@ -70,7 +70,14 @@ const userSchema = new mongoose.Schema({
   serviceProviderInfo: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ServiceProvider'
-  }
+  },
+  // Notification preferences for new listing alerts
+  notificationPrefs: {
+    newListings: { type: Boolean, default: false },
+    locations: [{ type: String }],
+    types: [{ type: String }],
+    maxPrice: { type: Number, default: 0 },
+  },
 }, {
   timestamps: true
 })
