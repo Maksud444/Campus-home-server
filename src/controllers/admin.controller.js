@@ -3,6 +3,7 @@ import Property from '../models/Property.model.js'
 import Post from '../models/Post.model.js'
 import Booking from '../models/Booking.model.js'
 import Service from '../models/Service.model.js'
+import { sendPostApprovedEmail, sendPostRejectedEmail } from '../utils/email.service.js'
 
 // ─────────────────────────────────────────────────
 // DASHBOARD STATS
@@ -494,6 +495,24 @@ export const approvePost = async (req, res) => {
     post.approvedAt = new Date()
     await post.save()
 
+    // Send email notification to post owner (non-blocking)
+    try {
+      const postOwner = await User.findOne({
+        $or: [{ _id: post.userId }, { email: post.userId }]
+      }).select('name email')
+      if (postOwner?.email) {
+        await sendPostApprovedEmail({
+          to: postOwner.email,
+          userName: postOwner.name || 'User',
+          postTitle: post.title || 'Your post',
+          postId: post._id,
+          adminNote: note,
+        })
+      }
+    } catch (emailErr) {
+      console.error('Email notification failed (non-critical):', emailErr.message)
+    }
+
     res.json({
       success: true,
       message: 'Post approved successfully',
@@ -527,6 +546,23 @@ export const rejectPost = async (req, res) => {
     post.approvedBy = req.user._id
     post.approvedAt = new Date()
     await post.save()
+
+    // Send email notification to post owner (non-blocking)
+    try {
+      const postOwner = await User.findOne({
+        $or: [{ _id: post.userId }, { email: post.userId }]
+      }).select('name email')
+      if (postOwner?.email) {
+        await sendPostRejectedEmail({
+          to: postOwner.email,
+          userName: postOwner.name || 'User',
+          postTitle: post.title || 'Your post',
+          adminNote: note,
+        })
+      }
+    } catch (emailErr) {
+      console.error('Email notification failed (non-critical):', emailErr.message)
+    }
 
     res.json({
       success: true,
