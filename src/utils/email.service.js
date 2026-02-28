@@ -142,7 +142,35 @@ export const sendMarketingEmail = async ({ to, userName, subject, title, body, c
   })
 }
 
-// ─── 5. Bulk send helper ─────────────────────────────────────
+// ─── 5. Password Reset Email ─────────────────────────────────
+export const sendPasswordResetEmail = async ({ to, userName, resetLink }) => {
+  if (!isEmailConfigured()) {
+    console.log('[Email] Not configured — reset link:', resetLink)
+    return
+  }
+
+  const transporter = createTransporter()
+  await transporter.sendMail({
+    from: FROM,
+    to,
+    subject: '🔑 Reset Your Baytino Password',
+    html: wrapEmail(
+      '#6366f1',
+      `<h1 style="color:#fff;margin:0;font-size:22px;">🔑 Password Reset Request</h1>`,
+      `<p style="color:#374151;font-size:16px;">Hello <strong>${userName || 'there'}</strong>,</p>
+       <p style="color:#374151;font-size:15px;">We received a request to reset your Baytino account password. Click the button below to set a new password:</p>
+       <div style="text-align:center;margin:28px 0;">
+         <a href="${resetLink}" style="background:#6366f1;color:#fff;padding:13px 28px;border-radius:8px;text-decoration:none;font-weight:bold;font-size:15px;">Reset Password →</a>
+       </div>
+       <p style="color:#6b7280;font-size:13px;">This link will expire in <strong>30 minutes</strong>. If you did not request a password reset, you can safely ignore this email — your password will not change.</p>
+       <div style="background:#fef3c7;border-left:4px solid #f59e0b;padding:10px 14px;margin:16px 0;border-radius:4px;">
+         <p style="color:#92400e;font-size:13px;margin:0;">⚠️ If you didn't request this, please secure your account immediately.</p>
+       </div>`
+    ),
+  })
+}
+
+// ─── 6. Bulk send helper ─────────────────────────────────────
 // Sends emails in small batches to avoid rate limits
 export const sendBulkEmails = async (recipients, emailFn, delayMs = 300) => {
   const results = { sent: 0, failed: 0, errors: [] }

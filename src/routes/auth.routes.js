@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken'
 import crypto from 'crypto'
 import User from '../models/User.model.js'
 import { checkConnection } from '../middleware/checkConnection.js'
+import { sendPasswordResetEmail } from '../utils/email.service.js'
 
 const router = express.Router()
 
@@ -352,15 +353,22 @@ router.post('/forgot-password', async (req, res) => {
     user.resetPasswordExpire = Date.now() + 30 * 60 * 1000 // 30 minutes
     await user.save()
 
-    // TODO: Send email with reset link
-    console.log('Reset token:', resetToken)
-    console.log('Reset link:', `${process.env.FRONTEND_URL}/reset-password?token=${resetToken}`)
+    // Send password reset email
+    const resetLink = `${process.env.FRONTEND_URL || 'https://baytino.com'}/reset-password?token=${resetToken}`
+    try {
+      await sendPasswordResetEmail({
+        to: user.email,
+        userName: user.name,
+        resetLink,
+      })
+    } catch (emailErr) {
+      console.error('Password reset email failed:', emailErr.message)
+      // Don't fail the request if email fails — token is still saved
+    }
 
     res.json({
       success: true,
       message: 'Password reset link sent to email',
-      // For development only - remove in production
-      resetToken: process.env.NODE_ENV === 'development' ? resetToken : undefined
     })
   } catch (error) {
     console.error('Forgot password error:', error)
