@@ -686,6 +686,50 @@ export const getAllProperties = async (req, res) => {
   }
 }
 
+// @desc    Approve property (pending → active)
+// @route   PUT /api/admin/properties/:id/approve
+// @access  Private (Admin)
+export const approveProperty = async (req, res) => {
+  try {
+    const property = await Property.findById(req.params.id)
+    if (!property) return res.status(404).json({ success: false, message: 'Property not found' })
+
+    if (property.status === 'active') {
+      return res.status(400).json({ success: false, message: 'Property is already active' })
+    }
+
+    property.status = 'active'
+    property.adminNote = req.body.note || ''
+    property.approvedBy = req.user._id
+    property.approvedAt = new Date()
+    await property.save()
+
+    res.json({ success: true, message: 'Property approved and now live', data: property })
+  } catch (error) {
+    console.error('Approve property error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
+// @desc    Reject property
+// @route   PUT /api/admin/properties/:id/reject
+// @access  Private (Admin)
+export const rejectProperty = async (req, res) => {
+  try {
+    const property = await Property.findById(req.params.id)
+    if (!property) return res.status(404).json({ success: false, message: 'Property not found' })
+
+    property.status = 'rejected'
+    property.adminNote = req.body.note || ''
+    await property.save()
+
+    res.json({ success: true, message: 'Property rejected', data: property })
+  } catch (error) {
+    console.error('Reject property error:', error)
+    res.status(500).json({ success: false, message: 'Server error' })
+  }
+}
+
 // @desc    Toggle featured property
 // @route   PUT /api/admin/properties/:id/feature
 // @access  Private (Admin)

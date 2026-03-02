@@ -20,6 +20,8 @@ import {
   deletePost,
   // Property management
   getAllProperties,
+  approveProperty,
+  rejectProperty,
   toggleFeaturedProperty,
   toggleVerifiedProperty,
   deleteProperty,
@@ -60,6 +62,8 @@ router.delete('/posts/:id', deletePost)
 
 // ── Property Management ────────────────────────────
 router.get('/properties', getAllProperties)
+router.put('/properties/:id/approve', approveProperty)
+router.put('/properties/:id/reject', rejectProperty)
 router.put('/properties/:id/feature', toggleFeaturedProperty)
 router.put('/properties/:id/verify', toggleVerifiedProperty)
 router.delete('/properties/:id', deleteProperty)

@@ -135,7 +135,7 @@ router.post('/', async (req, res) => {
       },
       contactPhone: contactPhone || '',
       contactEmail: contactEmail || '',
-      status: 'active'
+      status: 'pending'
     }
 
     // Add user info
@@ -190,11 +190,15 @@ router.get('/', async (req, res) => {
     const { userId, status } = req.query
 
     const filter = {
-      isDeleted: false // Exclude soft deleted
+      isDeleted: false, // Exclude soft deleted
+      status: 'active', // Only show approved properties publicly
     }
 
-    if (userId) filter.userId = userId
-    if (status) filter.status = status
+    if (userId) {
+      filter.userId = userId
+      delete filter.status // Owner can see their own pending/rejected too
+      if (status) filter.status = status
+    }
 
     const properties = await Property.find(filter)
       .populate('userId', 'name email avatar')
