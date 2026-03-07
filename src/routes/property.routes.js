@@ -1,6 +1,7 @@
 import express from 'express'
 import Property from '../models/Property.model.js'
 import User from '../models/User.model.js'
+import { buildRankingPipeline } from '../utils/rankingPipeline.js'
 
 const router = express.Router()
 
@@ -187,29 +188,54 @@ router.post('/', async (req, res) => {
 // ==================
 router.get('/', async (req, res) => {
   try {
-    const { userId, status } = req.query
+    const {
+      userId,
+      status,
+      city,
+      area,
+      type,
+      propertyType,
+      minPrice,
+      maxPrice,
+      page = 1,
+      limit = 50,
+    } = req.query
 
-    const filter = {
-      isDeleted: false, // Exclude soft deleted
-      status: 'active', // Only show approved properties publicly
-    }
-
+    // Owner view: skip ranking, show all their own listings sorted by date
     if (userId) {
-      filter.userId = userId
-      delete filter.status // Owner can see their own pending/rejected too
+      const filter = { isDeleted: false, userId }
       if (status) filter.status = status
+
+      const properties = await Property.find(filter)
+        .populate('userId', 'name email avatar')
+        .sort({ createdAt: -1 })
+        .lean()
+        .maxTimeMS(5000)
+
+      return res.json({ success: true, properties })
     }
 
-    const properties = await Property.find(filter)
-      .populate('userId', 'name email avatar')
-      .sort({ createdAt: -1 })
-      .lean()
-      .maxTimeMS(5000)
+    // Public view: ranked listing of active properties
+    const matchFilter = { isDeleted: false, status: 'active' }
 
-    res.json({
-      success: true,
-      properties
-    })
+    if (city)        matchFilter['location.city'] = { $regex: city, $options: 'i' }
+    if (area)        matchFilter['location.area'] = { $regex: area, $options: 'i' }
+    if (type)        matchFilter.type = type
+    if (propertyType) matchFilter.propertyType = propertyType
+
+    if (minPrice || maxPrice) {
+      matchFilter.price = {}
+      if (minPrice) matchFilter.price.$gte = Number(minPrice)
+      if (maxPrice) matchFilter.price.$lte = Number(maxPrice)
+    }
+
+    const skip = (Math.max(1, Number(page)) - 1) * Math.min(100, Number(limit))
+    const lim  = Math.min(100, Number(limit))
+
+    const pipeline = buildRankingPipeline(matchFilter, { skip, limit: lim })
+    const properties = await Property.aggregate(pipeline).option({ maxTimeMS: 10000 })
+
+    res.json({ success: true, properties })
   } catch (error) {
     console.error('❌ Get properties error:', error)
     res.status(500).json({

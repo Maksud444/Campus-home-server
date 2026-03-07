@@ -107,9 +107,14 @@ const propertySchema = new mongoose.Schema({
   // Property status
   status: {
     type: String,
-    enum: ['available', 'rented', 'not-available', 'active', 'inactive'],
+    enum: ['pending', 'active', 'rejected', 'available', 'rented', 'not-available', 'inactive'],
     default: 'active'
   },
+
+  // Admin approval fields
+  approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  approvedAt: Date,
+  adminNote: String,
   
   // Soft delete fields
   isDeleted: {
